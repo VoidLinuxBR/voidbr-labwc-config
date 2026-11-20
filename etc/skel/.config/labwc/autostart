@@ -1,0 +1,8 @@
+# VoidBR Labwc - autostart
+# Executado pelo labwc ao iniciar a sessão (um comando por linha, sempre com "&").
+# Mudanças aqui só valem depois de sair e entrar de novo na sessão.
+#
+# Barra, notificações, papel de parede, áudio, chaveiro, polkit e bandeja
+# sobem pelo voidbr-labwc-session (/usr/local/bin/voidbr-labwc-session).
+
+/usr/local/bin/voidbr-labwc-session >/dev/null 2>&1 &

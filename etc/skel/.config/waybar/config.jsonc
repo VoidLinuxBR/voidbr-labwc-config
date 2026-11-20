@@ -1,0 +1,152 @@
+// VoidBR Labwc - Waybar (Tokyo Night)
+// Áreas de trabalho pelo ext-workspace e lista de janelas pelo
+// wlr-foreign-toplevel, os dois suportados pelo labwc.
+{
+  "layer": "top",
+  "position": "top",
+  "height": 34,
+  "margin": "4 8 0 8",
+  "spacing": 4,
+
+  "modules-left": ["custom/menu", "ext/workspaces", "wlr/taskbar"],
+  "modules-center": ["clock"],
+  "modules-right": [
+    "mpris",
+    "privacy",
+    "tray",
+    "power-profiles-daemon",
+    "cpu",
+    "memory",
+    "wireplumber",
+    "network",
+    "battery",
+    "idle_inhibitor",
+    "custom/power"
+  ],
+
+  "custom/menu": {
+    "format": "  ",
+    "tooltip": true,
+    "tooltip-format": "Aplicativos (Super + Espaço)",
+    "on-click": "pkill -x rofi || rofi -show drun",
+    "on-click-right": "pkill -x rofi || rofi -show window"
+  },
+
+  "ext/workspaces": {
+    "format": "{name}",
+    "sort-by-id": true,
+    "on-click": "activate"
+  },
+
+  "wlr/taskbar": {
+    "format": "{icon}",
+    "icon-size": 18,
+    "tooltip-format": "{title}",
+    "on-click": "activate",
+    "on-click-middle": "close",
+    "on-click-right": "minimize-raise",
+    "ignore-list": []
+  },
+
+  "clock": {
+    "format": "{:%a %d %b  %H:%M}",
+    "locale": "pt_BR.UTF-8",
+    "tooltip-format": "<tt><small>{calendar}</small></tt>",
+    "calendar": {
+      "mode": "month",
+      "on-scroll": 1,
+      "format": {
+        "months": "<span color='#7aa2f7'><b>{}</b></span>",
+        "weekdays": "<span color='#bb9af7'><b>{}</b></span>",
+        "today": "<span color='#ff9e64'><b><u>{}</u></b></span>"
+      }
+    },
+    "actions": {
+      "on-scroll-up": "shift_up",
+      "on-scroll-down": "shift_down"
+    }
+  },
+
+  "mpris": {
+    "format": "{player_icon} {title}",
+    "format-paused": "{status_icon} {title}",
+    "title-len": 30,
+    "player-icons": { "default": "󰎆" },
+    "status-icons": { "paused": "󰏤" }
+  },
+
+  "privacy": {
+    "icon-size": 14
+  },
+
+  "tray": {
+    "icon-size": 16,
+    "spacing": 8
+  },
+
+  "power-profiles-daemon": {
+    "format": "{icon}",
+    "tooltip-format": "Perfil de energia: {profile}",
+    "format-icons": {
+      "default": "󰾅",
+      "performance": "󰓅",
+      "balanced": "󰾅",
+      "power-saver": "󰾆"
+    }
+  },
+
+  "cpu": {
+    "format": "󰍛 {usage}%",
+    "interval": 3,
+    "on-click": "foot -a btop btop"
+  },
+
+  "memory": {
+    "format": "󰘚 {percentage}%",
+    "interval": 5,
+    "tooltip-format": "{used:0.1f} GiB de {total:0.1f} GiB",
+    "on-click": "foot -a btop btop"
+  },
+
+  "wireplumber": {
+    "format": "{icon} {volume}%",
+    "format-muted": "󰝟 mudo",
+    "format-icons": ["󰕿", "󰖀", "󰕾"],
+    "on-click": "pavucontrol",
+    "on-click-right": "/usr/local/bin/voidbr-labwc-osd mute",
+    "on-scroll-up": "/usr/local/bin/voidbr-labwc-osd volume-up",
+    "on-scroll-down": "/usr/local/bin/voidbr-labwc-osd volume-down"
+  },
+
+  "network": {
+    "format-wifi": "󰤨 {signalStrength}%",
+    "format-ethernet": "󰈀",
+    "format-disconnected": "󰤭",
+    "tooltip-format-wifi": "{essid} - {ipaddr}",
+    "tooltip-format-ethernet": "{ifname} - {ipaddr}",
+    "tooltip-format-disconnected": "Sem conexão",
+    "on-click": "foot -a nmtui nmtui"
+  },
+
+  "battery": {
+    "states": { "warning": 25, "critical": 10 },
+    "format": "{icon} {capacity}%",
+    "format-charging": "󰂄 {capacity}%",
+    "format-plugged": "󰚥 {capacity}%",
+    "format-icons": ["󰁺", "󰁼", "󰁾", "󰂀", "󰁹"]
+  },
+
+  "idle_inhibitor": {
+    "format": "{icon}",
+    "format-icons": { "activated": "", "deactivated": "󰛊" },
+    "tooltip-format-activated": "Tela sempre ligada",
+    "tooltip-format-deactivated": "Apagar a tela quando parado"
+  },
+
+  "custom/power": {
+    "format": "󰐥",
+    "tooltip": true,
+    "tooltip-format": "Sair / Desligar (Super + Esc)",
+    "on-click": "/usr/local/bin/voidbr-labwc-power-menu"
+  }
+}

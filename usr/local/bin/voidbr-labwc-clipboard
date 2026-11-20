@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# ====================================================================
+# VoidBR Labwc - Histórico da área de transferência (Super+V)
+# Created: qui 19 nov 2026 23:53:31 -04
+# Updated: qui 19 nov 2026 23:53:31 -04
+# Version: 1.0.0
+# ====================================================================
+pkill -x rofi && exit 0
+
+if ! command -v cliphist >/dev/null; then
+    notify-send "Área de transferência" "Instale o cliphist: sudo xbps-install cliphist"
+    exit 1
+fi
+
+sel=$(cliphist list | rofi -dmenu -i -p "Copiados" -display-columns 2) || exit 0
+[ -n "$sel" ] && cliphist decode <<<"$sel" | wl-copy

@@ -1,0 +1,211 @@
+<?xml version="1.0"?>
+<!--
+  VoidBR Labwc - configuração principal
+  Referência completa: man 5 labwc-config  |  /usr/share/doc/labwc/rc.xml.all
+  Depois de editar: labwc -r (ou Super+Shift+R)
+-->
+<labwc_config>
+
+  <core>
+    <gap>6</gap>
+  </core>
+
+  <placement>
+    <policy>automatic</policy>
+  </placement>
+
+  <!-- Tema Tokyo Night do VoidBR (/usr/share/themes/VoidBR-Labwc) -->
+  <theme>
+    <name>VoidBR-Labwc</name>
+    <icon>Tokyonight-Dark-Icons</icon>
+    <fallbackAppIcon>application-x-executable</fallbackAppIcon>
+    <titlebar>
+      <layout>icon:iconify,max,close</layout>
+      <showTitle>yes</showTitle>
+    </titlebar>
+    <cornerRadius>10</cornerRadius>
+    <dropShadows>yes</dropShadows>
+    <font name="Noto Sans" size="10" />
+    <font place="ActiveWindow" name="Noto Sans" size="10" weight="bold" />
+    <font place="MenuHeader" name="Noto Sans" size="10" weight="bold" />
+  </theme>
+
+  <!-- 4 áreas de trabalho (aparecem no Waybar pelo ext-workspace) -->
+  <desktops>
+    <names>
+      <name>1</name>
+      <name>2</name>
+      <name>3</name>
+      <name>4</name>
+    </names>
+    <popupTime>600</popupTime>
+  </desktops>
+
+  <!-- Alt+Tab com ícone e título -->
+  <windowSwitcher preview="yes" outlines="yes">
+    <osd show="yes" style="classic" output="focused" />
+    <fields>
+      <field content="icon" width="6%" />
+      <field content="desktop_entry_name" width="24%" />
+      <field content="title" width="70%" />
+    </fields>
+  </windowSwitcher>
+
+  <focus>
+    <followMouse>no</followMouse>
+    <raiseOnFocus>no</raiseOnFocus>
+  </focus>
+
+  <snapping>
+    <range>10</range>
+    <overlay>
+      <enabled>yes</enabled>
+    </overlay>
+    <topMaximize>yes</topMaximize>
+  </snapping>
+
+  <keyboard>
+    <!-- Mantém os atalhos padrão do labwc (Alt+Tab, Alt+F4, Super+setas...) -->
+    <default />
+    <numlock>on</numlock>
+    <repeatRate>30</repeatRate>
+    <repeatDelay>400</repeatDelay>
+
+    <!-- Aplicativos -->
+    <keybind key="W-Return">
+      <action name="Execute" command="foot" />
+    </keybind>
+    <keybind key="W-space">
+      <action name="Execute" command="sh -c 'pkill -x rofi || rofi -show drun'" />
+    </keybind>
+    <keybind key="W-e">
+      <action name="Execute" command="thunar" />
+    </keybind>
+    <keybind key="W-b">
+      <action name="Execute" command="firefox" />
+    </keybind>
+    <keybind key="W-v">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-clipboard" />
+    </keybind>
+    <keybind key="C-S-Escape">
+      <action name="Execute" command="foot -a btop btop" />
+    </keybind>
+
+    <!-- Menus -->
+    <keybind key="W-x">
+      <action name="ShowMenu" menu="root-menu" />
+    </keybind>
+    <keybind key="W-Escape">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-power-menu" />
+    </keybind>
+    <keybind key="W-F1">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-shortcuts" />
+    </keybind>
+
+    <!-- Janelas -->
+    <keybind key="W-q">
+      <action name="Close" />
+    </keybind>
+    <keybind key="W-f">
+      <action name="ToggleFullscreen" />
+    </keybind>
+    <keybind key="W-m">
+      <action name="Iconify" />
+    </keybind>
+    <keybind key="W-c">
+      <action name="MoveToCursor" />
+    </keybind>
+
+    <!-- Áreas de trabalho -->
+    <keybind key="W-1"><action name="GoToDesktop" to="1" /></keybind>
+    <keybind key="W-2"><action name="GoToDesktop" to="2" /></keybind>
+    <keybind key="W-3"><action name="GoToDesktop" to="3" /></keybind>
+    <keybind key="W-4"><action name="GoToDesktop" to="4" /></keybind>
+    <keybind key="W-S-1"><action name="SendToDesktop" to="1" /></keybind>
+    <keybind key="W-S-2"><action name="SendToDesktop" to="2" /></keybind>
+    <keybind key="W-S-3"><action name="SendToDesktop" to="3" /></keybind>
+    <keybind key="W-S-4"><action name="SendToDesktop" to="4" /></keybind>
+    <keybind key="C-A-Left">
+      <action name="GoToDesktop" to="left" wrap="yes" />
+    </keybind>
+    <keybind key="C-A-Right">
+      <action name="GoToDesktop" to="right" wrap="yes" />
+    </keybind>
+    <keybind key="C-A-S-Left">
+      <action name="SendToDesktop" to="left" wrap="yes" />
+    </keybind>
+    <keybind key="C-A-S-Right">
+      <action name="SendToDesktop" to="right" wrap="yes" />
+    </keybind>
+
+    <!-- Sessão -->
+    <keybind key="W-l">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-lock" />
+    </keybind>
+    <keybind key="W-S-r">
+      <action name="Reconfigure" />
+    </keybind>
+
+    <!-- Captura de tela -->
+    <keybind key="Print">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-screenshot tela" />
+    </keybind>
+    <keybind key="S-Print">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-screenshot area" />
+    </keybind>
+    <keybind key="A-Print">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-screenshot monitor" />
+    </keybind>
+
+    <!-- Volume, brilho e mídia (com aviso na tela pelo mako) -->
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-osd volume-up" />
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-osd volume-down" />
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-osd mute" />
+    </keybind>
+    <keybind key="XF86AudioMicMute">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-osd mic-mute" />
+    </keybind>
+    <keybind key="XF86MonBrightnessUp">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-osd brightness-up" />
+    </keybind>
+    <keybind key="XF86MonBrightnessDown">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-osd brightness-down" />
+    </keybind>
+    <keybind key="XF86AudioPlay"><action name="Execute" command="playerctl play-pause" /></keybind>
+    <keybind key="XF86AudioPause"><action name="Execute" command="playerctl play-pause" /></keybind>
+    <keybind key="XF86AudioNext"><action name="Execute" command="playerctl next" /></keybind>
+    <keybind key="XF86AudioPrev"><action name="Execute" command="playerctl previous" /></keybind>
+  </keyboard>
+
+  <!-- Mouse: padrões do labwc (clique direito na área de trabalho = menu,
+       rolagem na área de trabalho = troca de área de trabalho) -->
+  <mouse>
+    <default />
+  </mouse>
+
+  <libinput>
+    <device category="touchpad">
+      <tap>yes</tap>
+      <naturalScroll>yes</naturalScroll>
+      <disableWhileTyping>yes</disableWhileTyping>
+    </device>
+  </libinput>
+
+  <windowRules>
+    <!-- Mixer e monitor do sistema abrem num tamanho bom e bem posicionados -->
+    <windowRule identifier="*pavucontrol*">
+      <action name="ResizeTo" width="900" height="560" />
+      <action name="AutoPlace" />
+    </windowRule>
+    <windowRule identifier="btop">
+      <action name="ResizeTo" width="1100" height="700" />
+      <action name="AutoPlace" />
+    </windowRule>
+  </windowRules>
+
+</labwc_config>

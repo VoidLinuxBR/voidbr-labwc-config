@@ -1,0 +1,54 @@
+# VoidBR Labwc - Tokyo Night
+# Tema das janelas, menus e OSD do labwc (rc.xml: <theme><name>VoidBR-Labwc</name>)
+# Ajustes pessoais sem editar este arquivo: ~/.config/labwc/themerc-override
+
+border.width: 1
+window.titlebar.padding.width: 6
+window.titlebar.padding.height: 4
+
+# Janela ativa
+window.active.title.bg.color: #1a1b26
+window.active.label.text.color: #c0caf5
+window.active.border.color: #7aa2f7
+window.active.button.unpressed.image.color: #a9b1d6
+window.active.button.close.unpressed.image.color: #f7768e
+
+# Janela inativa
+window.inactive.title.bg.color: #16161e
+window.inactive.label.text.color: #565f89
+window.inactive.border.color: #2a2e42
+window.inactive.button.unpressed.image.color: #565f89
+
+window.label.text.justify: center
+
+# Destaque do botão sob o mouse
+window.button.hover.bg.color: #7aa2f733
+window.button.hover.bg.corner-radius: 6
+
+# Menus (clique direito na área de trabalho e menu da janela)
+menu.border.width: 1
+menu.border.color: #2a2e42
+menu.items.bg.color: #1a1b26
+menu.items.text.color: #c0caf5
+menu.items.active.bg.color: #7aa2f7
+menu.items.active.text.color: #1a1b26
+menu.items.padding.x: 10
+menu.items.padding.y: 5
+menu.separator.color: #2a2e42
+menu.title.bg.color: #16161e
+menu.title.text.color: #7aa2f7
+menu.title.text.justify: center
+
+# OSD (Alt+Tab e troca de área de trabalho)
+osd.bg.color: #1a1b26
+osd.border.color: #7aa2f7
+osd.border.width: 1
+osd.label.text.color: #c0caf5
+osd.window-switcher.style-classic.item.active.bg.color: #2a2e42
+osd.window-switcher.style-classic.item.active.border.color: #7aa2f7
+
+# Pré-visualização do encaixe (arrastar janela para a borda)
+snapping.overlay.region.bg.enabled: yes
+snapping.overlay.region.bg.color: #7aa2f733
+snapping.overlay.edge.bg.enabled: yes
+snapping.overlay.edge.bg.color: #7aa2f733

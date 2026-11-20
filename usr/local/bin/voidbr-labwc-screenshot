@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# ====================================================================
+# VoidBR Labwc - Captura de tela
+# Uso: voidbr-labwc-screenshot tela|monitor|area
+#   tela:    todos os monitores
+#   monitor: clique no monitor desejado (slurp -o)
+#   area:    seleciona uma área com o mouse (slurp)
+# Salva em ~/Imagens/Capturas e copia para a área de transferência.
+# Created: qui 19 nov 2026 23:53:31 -04
+# Updated: qui 19 nov 2026 23:53:31 -04
+# Version: 1.0.0
+# ====================================================================
+DIR="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Imagens")/Capturas"
+mkdir -p "$DIR"
+f="$DIR/$(date +%Y-%m-%d_%H%M%S)-${1:-tela}.png"
+
+case "$1" in
+    area)
+        geom=$(slurp) || exit 0
+        grim -g "$geom" "$f" || exit 1
+        ;;
+    monitor)
+        mon=$(slurp -o -r -f '%o') || exit 0
+        grim -o "$mon" "$f" || exit 1
+        ;;
+    *)
+        grim "$f" || exit 1
+        ;;
+esac
+
+wl-copy <"$f"
+notify-send -i "$f" "Captura de tela" "Salva em $f e copiada"

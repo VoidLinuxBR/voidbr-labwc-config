@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  VoidBR Labwc - menu do clique direito na área de trabalho (e Super+X)
+  "Aplicativos" é montado na hora pelo labwc-menu-generator a partir dos
+  .desktop instalados: app novo aparece sozinho, sem editar este arquivo.
+-->
+<openbox_menu>
+
+  <menu id="voidbr-apps" label="Aplicativos" icon="applications-all"
+        execute="labwc-menu-generator -p -I -n -t 'foot -e'" />
+
+  <menu id="voidbr-config" label="Configurações" icon="preferences-system">
+    <item label="Aparência (GTK, ícones, cursor)" icon="preferences-desktop-theme">
+      <action name="Execute" command="nwg-look" />
+    </item>
+    <item label="Som" icon="audio-volume-high">
+      <action name="Execute" command="pavucontrol" />
+    </item>
+    <item label="Rede" icon="network-wireless">
+      <action name="Execute" command="nm-connection-editor" />
+    </item>
+    <item label="Bluetooth" icon="bluetooth">
+      <action name="Execute" command="blueman-manager" />
+    </item>
+    <item label="Discos" icon="drive-harddisk">
+      <action name="Execute" command="gnome-disks" />
+    </item>
+    <separator />
+    <item label="Editar atalhos e janelas (rc.xml)" icon="text-editor">
+      <action name="Execute" command="mousepad ~/.config/labwc/rc.xml" />
+    </item>
+    <item label="Editar este menu (menu.xml)" icon="text-editor">
+      <action name="Execute" command="mousepad ~/.config/labwc/menu.xml" />
+    </item>
+    <item label="Editar a barra (Waybar)" icon="text-editor">
+      <action name="Execute" command="mousepad ~/.config/waybar/config.jsonc" />
+    </item>
+    <item label="Recarregar configuração" icon="view-refresh">
+      <action name="Reconfigure" />
+    </item>
+  </menu>
+
+  <menu id="root-menu" label="VoidBR">
+    <separator label="VoidBR Labwc" />
+    <item label="Terminal" icon="utilities-terminal">
+      <action name="Execute" command="foot" />
+    </item>
+    <item label="Arquivos" icon="system-file-manager">
+      <action name="Execute" command="thunar" />
+    </item>
+    <item label="Navegador" icon="firefox">
+      <action name="Execute" command="firefox" />
+    </item>
+    <item label="Executar..." icon="system-run">
+      <action name="Execute" command="rofi -show drun" />
+    </item>
+    <separator />
+    <menu id="voidbr-apps" />
+    <menu id="client-list-combined-menu" label="Janelas abertas" icon="preferences-system-windows" />
+    <menu id="voidbr-config" />
+    <separator />
+    <item label="Atalhos de teclado" icon="input-keyboard">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-shortcuts" />
+    </item>
+    <item label="Bloquear tela" icon="system-lock-screen">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-lock" />
+    </item>
+    <item label="Sair / Desligar..." icon="system-shutdown">
+      <action name="Execute" command="/usr/local/bin/voidbr-labwc-power-menu" />
+    </item>
+  </menu>
+
+</openbox_menu>

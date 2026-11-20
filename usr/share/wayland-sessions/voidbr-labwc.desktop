@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=VoidBR Labwc
+Name[pt_BR]=VoidBR Labwc
+Comment=Labwc com a configuração do VoidBR (Waybar, rofi, mako)
+Comment[pt_BR]=Labwc com a configuração do VoidBR (Waybar, rofi, mako)
+# Sem systemd não há barramento D-Bus de usuário: a sessão sobe dentro do
+# dbus-run-session (gnome-keyring, portais, notificações e o próprio labwc
+# exportando WAYLAND_DISPLAY para o D-Bus dependem disso)
+Exec=/usr/bin/dbus-run-session /usr/bin/labwc
+TryExec=/usr/bin/labwc
+Type=Application
+DesktopNames=labwc;wlroots

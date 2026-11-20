@@ -1,11 +1,50 @@
-<div align="center">
+# voidbr-labwc-config
 
-# 🔵 voidbr-pkgfile-template
+Skel config for VoidBR LABWC Meta Package
 
-**Template for VoidBR pkgmake/pkgfile packages**
+Configuração da edição labwc do VoidBR: compositor flutuante no estilo Openbox,
+Waybar, rofi, mako, foot e visual Tokyo Night. Usada pelo meta-pacote
+[voidbr-labwc](https://github.com/voidlinuxbr/voidbr-labwc).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+## O que vem no pacote
 
-</div>
+| Caminho | Para quê |
+|---|---|
+| `etc/skel/.config/labwc/rc.xml` | Atalhos, tema, áreas de trabalho, touchpad |
+| `etc/skel/.config/labwc/menu.xml` | Menu do clique direito (Aplicativos pelo `labwc-menu-generator`) |
+| `etc/skel/.config/labwc/autostart` | Chama o `voidbr-labwc-session` |
+| `etc/skel/.config/labwc/environment` | Teclado ABNT2 (br,us), cursor e variáveis Wayland |
+| `etc/skel/.config/labwc/shutdown` | Encerra o swayidle e o cliphist ao sair |
+| `etc/skel/.config/waybar/` | Barra: áreas de trabalho (ext-workspace), janelas, bandeja, volume, rede, bateria |
+| `etc/skel/.config/{rofi,mako,foot}/` | Lançador, notificações e terminal Tokyo Night |
+| `etc/skel/.config/xsettingsd/` | Tema, ícones, cursor e fonte para apps X11 (o GTK em Wayland recebe pelo gsettings no 1º login) |
+| `etc/skel/.config/xdg-desktop-portal/labwc-portals.conf` | Portais gtk + wlr (captura de tela) |
+| `usr/share/themes/VoidBR-Labwc/labwc/themerc` | Tema das janelas e menus do labwc |
+| `usr/share/wayland-sessions/voidbr-labwc.desktop` | Sessão "VoidBR Labwc" no SDDM (dentro do `dbus-run-session`) |
+| `usr/local/bin/voidbr-labwc-*` | Scripts da sessão (abaixo) |
 
----
+## Scripts
+
+| Script | Função |
+|---|---|
+| `voidbr-labwc-session` | Sobe áudio, chaveiro, polkit, papel de parede, Waybar, mako, swayidle e bandeja |
+| `voidbr-labwc-lock` | Bloqueio de tela (swaylock Tokyo Night) |
+| `voidbr-labwc-power-menu` | Bloquear / sair / suspender / reiniciar / desligar (rofi) |
+| `voidbr-labwc-screenshot` | `tela`, `monitor` ou `area` → ~/Imagens/Capturas + área de transferência |
+| `voidbr-labwc-osd` | Volume, microfone e brilho com aviso na tela |
+| `voidbr-labwc-clipboard` | Histórico da área de transferência (cliphist) |
+| `voidbr-labwc-shortcuts` | Lista dos atalhos |
+
+## Atalhos principais
+
+| Atalho | Ação |
+|---|---|
+| Super + Enter | Terminal |
+| Super + Espaço | Aplicativos |
+| Super + X / clique direito na área de trabalho | Menu do VoidBR |
+| Super + 1..4 / Super + Shift + 1..4 | Ir / mover para a área de trabalho |
+| Super + Setas | Encaixar janela nas bordas |
+| Super + L | Bloquear |
+| Super + Esc | Menu de energia |
+| Super + F1 | Todos os atalhos |
+| Super + Shift + R | Recarregar a configuração |

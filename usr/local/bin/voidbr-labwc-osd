@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# ====================================================================
+# VoidBR Labwc - Volume, microfone e brilho com aviso na tela (mako)
+# Uso: voidbr-labwc-osd volume-up|volume-down|mute|mic-mute|brightness-up|brightness-down
+# Created: qui 19 nov 2026 23:53:31 -04
+# Updated: qui 19 nov 2026 23:53:31 -04
+# Version: 1.0.0
+# ====================================================================
+ID_FILE="${XDG_RUNTIME_DIR:-/tmp}/voidbr-labwc-osd.id"
+STEP=5
+
+# Mostra (ou substitui) o aviso com barra de progresso
+osd() { # osd <ícone> <título> <valor 0-100>
+    local old new
+    old=$(cat "$ID_FILE" 2>/dev/null)
+    new=$(notify-send -a voidbr-osd -i "$1" -h "int:value:$3" -t 1500 -p \
+        ${old:+-r "$old"} "$2" 2>/dev/null) && printf '%s' "$new" >"$ID_FILE"
+}
+
+vol_get() { # porcentagem e "MUTED" do wpctl
+    wpctl get-volume "${1:-@DEFAULT_AUDIO_SINK@}" 2>/dev/null
+}
+
+vol_show() {
+    local out pct
+    out=$(vol_get)
+    pct=$(awk '{printf "%d", $2 * 100}' <<<"$out")
+    if [[ $out == *MUTED* ]] || [ "$pct" -eq 0 ]; then
+        osd audio-volume-muted "Volume: mudo" "$pct"
+    elif [ "$pct" -lt 34 ]; then
+        osd audio-volume-low "Volume: $pct%" "$pct"
+    elif [ "$pct" -lt 67 ]; then
+        osd audio-volume-medium "Volume: $pct%" "$pct"
+    else
+        osd audio-volume-high "Volume: $pct%" "$pct"
+    fi
+}
+
+bright_show() {
+    local pct
+    pct=$(brightnessctl -m 2>/dev/null | awk -F, '{gsub("%","",$4); print $4}')
+    osd display-brightness "Brilho: ${pct:-0}%" "${pct:-0}"
+}
+
+case "$1" in
+    volume-up)
+        wpctl set-mute @DEFAULT_AUDIO_SINK@ 0
+        wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "${STEP}%+"
+        vol_show
+        ;;
+    volume-down)
+        wpctl set-volume @DEFAULT_AUDIO_SINK@ "${STEP}%-"
+        vol_show
+        ;;
+    mute)
+        wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+        vol_show
+        ;;
+    mic-mute)
+        wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle
+        if [[ $(vol_get @DEFAULT_AUDIO_SOURCE@) == *MUTED* ]]; then
+            osd microphone-sensitivity-muted "Microfone: mudo" 0
+        else
+            osd microphone-sensitivity-high "Microfone: ligado" 100
+        fi
+        ;;
+    brightness-up)
+        brightnessctl -q set "${STEP}%+"
+        bright_show
+        ;;
+    brightness-down)
+        brightnessctl -q -n 1 set "${STEP}%-"
+        bright_show
+        ;;
+    *)
+        echo "Uso: ${0##*/} volume-up|volume-down|mute|mic-mute|brightness-up|brightness-down" >&2
+        exit 1
+        ;;
+esac

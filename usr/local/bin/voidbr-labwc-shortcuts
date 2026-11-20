@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# ====================================================================
+# VoidBR Labwc - Lista dos atalhos de teclado (Super+F1)
+# Created: qui 19 nov 2026 23:53:31 -04
+# Updated: qui 19 nov 2026 23:53:31 -04
+# Version: 1.0.0
+# ====================================================================
+pkill -f 'rofi.*Atalhos' && exit 0
+
+cat <<'EOF' | rofi -dmenu -i -p "Atalhos" -no-custom \
+    -theme-str 'window {width: 640px;} listview {lines: 18;}' >/dev/null
+Super + Enter              Terminal (foot)
+Super + Espaço             Menu de aplicativos (rofi)
+Super + E                  Arquivos (Thunar)
+Super + B                  Navegador (Firefox)
+Super + V                  Histórico da área de transferência
+Super + X                  Menu do VoidBR (igual ao clique direito)
+Super + Q  /  Alt + F4     Fechar janela
+Super + A                  Maximizar / restaurar
+Super + F                  Tela cheia
+Super + M                  Minimizar
+Super + D                  Mostrar a área de trabalho
+Super + C                  Trazer a janela para o mouse
+Super + Setas              Encaixar a janela nas bordas
+Alt + Tab                  Alternar janelas
+Alt + Espaço               Menu da janela
+Super + 1..4               Ir para a área de trabalho
+Super + Shift + 1..4       Mover a janela para a área de trabalho
+Ctrl + Alt + ← / →         Área de trabalho anterior / próxima
+Ctrl + Alt + Shift + ← / → Levar a janela junto
+Super + L                  Bloquear a tela
+Super + Esc                Sair / reiniciar / desligar
+Super + Shift + R          Recarregar a configuração
+Print                      Captura da tela inteira
+Shift + Print              Captura de uma área
+Alt + Print                Captura de um monitor
+Ctrl + Shift + Esc         Monitor do sistema (btop)
+Alt + Shift                Alternar teclado br / us
+EOF

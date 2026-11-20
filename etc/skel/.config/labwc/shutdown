@@ -1,0 +1,6 @@
+# VoidBR Labwc - executado pelo labwc ao encerrar a sessão
+# Encerra o que o voidbr-labwc-session iniciou e que não sai sozinho.
+
+pkill -u "$USER" -x swayidle
+pkill -u "$USER" -x cliphist
+pkill -u "$USER" -f 'wl-paste --watch cliphist'
