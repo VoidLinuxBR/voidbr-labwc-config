@@ -10,6 +10,10 @@
         execute="labwc-menu-generator -p -I -n -t 'foot -e'" />
 
   <menu id="voidbr-config" label="Configurações" icon="preferences-system">
+    <item label="VoidBR Labwc Tweaks" icon="org.voidbr.LabwcTweaks">
+      <action name="Execute" command="voidbr-labwc-tweaks" />
+    </item>
+    <separator />
     <item label="Aparência (GTK, ícones, cursor)" icon="preferences-desktop-theme">
       <action name="Execute" command="nwg-look" />
     </item>

@@ -1,0 +1,1624 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+#   voidbr-labwc-tweaks
+#   Created: sex 20 nov 2026 00:45:00 -04
+#   Updated: sex 20 nov 2026 01:02:00 -04
+#
+#   Copyright (c) 2026, Vilmar Catafesta <vcatafesta@gmail.com>
+#   Copyright (c) 2026, VoidLinuxBR Team
+#   Assembled By Vilmar Catafesta for the VoidBR project.
+#   All rights reserved.
+#
+#   ChangeLog:
+#   - v1.0 (2026-11-20): Versão inicial — GTK4 + PyGObject, no modelo do
+#     voidbr-enlightenment-tweaks. Abas Janelas, Barra (Waybar em ilha ou
+#     inteira, posição, altura, transparência, módulos), Aparência (GTK,
+#     ícones, cursor, fonte), Papel de parede, Teclado e touchpad e Áreas de
+#     trabalho. Botões Aplicar, Padrão VoidBR e Padrão labwc.
+#
+#   Redistribution and use in source and binary forms, with or without
+#   modification, are permitted provided that the following conditions
+#   are met:
+#   1. Redistributions of source code must retain the above copyright
+#      notice, this list of conditions and the following disclaimer.
+#   2. Redistributions in binary form must reproduce the above copyright
+#      notice, this list of conditions and the following disclaimer in the
+#      documentation and/or other materials provided with the distribution.
+#
+#   THIS SOFTWARE IS PROVIDED BY Vilmar Catafesta ''AS IS'' AND ANY EXPRESS OR
+#   IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+#   OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+#   IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+#   INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+#   NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+#   THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+##############################################################################
+"""
+VoidBR Labwc Tweaks - ajustes do labwc do VoidBR (janelas, barra em ilha,
+aparência, papel de parede, teclado/touchpad e áreas de trabalho) sem abrir
+arquivo de configuração.
+
+Requer: PyGObject (GTK4).
+    sudo xbps-install -S python3-gobject gtk4
+
+Como aplica:
+    O labwc relê o rc.xml, o tema e o environment com "labwc --reconfigure",
+    sem fechar as janelas. A Waybar relê config e estilo com SIGUSR2.
+    Tema GTK, ícones, cursor e fonte vão para o gsettings (apps GTK em
+    Wayland) e para o xsettingsd (apps X11).
+
+O que o app altera (sempre no usuário atual):
+    ~/.config/labwc/rc.xml                janelas, teclado, touchpad, áreas
+    ~/.config/labwc/environment           layout do teclado e cursor
+    ~/.config/waybar/config.jsonc         posição, altura e módulos (só esses valores;
+                                          comentários e o resto ficam como estão)
+    ~/.config/waybar/style.css            bloco "voidbr-labwc-tweaks" (ilha)
+    ~/.config/xsettingsd/xsettingsd.conf  tema para apps X11
+    ~/.local/share/backgrounds/current    papel de parede (link)
+    ~/.config/voidbr/labwc-tweaks.json    fonte do app e modo do papel
+"""
+
+import gi
+import copy
+import datetime
+import glob
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import xml.etree.ElementTree as ET
+
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib, Gio
+
+VERSAO = "1.0"
+APP_ID = "org.voidbr.LabwcTweaks"
+
+HOME = os.path.expanduser("~")
+CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
+DADOS = os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share")
+SKEL = "/etc/skel/.config"
+
+RC = os.path.join(CONFIG, "labwc", "rc.xml")
+ENV = os.path.join(CONFIG, "labwc", "environment")
+WAYBAR_DIR = os.path.join(CONFIG, "waybar")
+WAYBAR_CSS = os.path.join(WAYBAR_DIR, "style.css")
+XSETTINGSD = os.path.join(CONFIG, "xsettingsd", "xsettingsd.conf")
+PREFS_APP = os.path.join(CONFIG, "voidbr", "labwc-tweaks.json")
+BACKUP_DIR = os.path.join(CONFIG, "voidbr", "labwc-tweaks-backup")
+PAPEL_LINK = os.path.join(DADOS, "backgrounds", "current")
+RC_LABWC = "/usr/share/doc/labwc/rc.xml"
+ESCALA_MIN, ESCALA_MAX = 0.7, 2.0
+
+PAPEL_PASTA = "/usr/share/backgrounds/voidbr"
+PAPEL_VOIDBR = os.path.join(PAPEL_PASTA, "voidbr-wallpaper.avif")
+PAPEL_EXT = (".avif", ".jpg", ".jpeg", ".png", ".webp", ".jxl", ".svg")
+PAPEL_MODOS = [("fill", "Preencher (corta as sobras)"), ("fit", "Caber (sem cortar)"),
+               ("stretch", "Esticar"), ("center", "Centralizar"), ("tile", "Lado a lado")]
+
+PASTAS_TEMAS = ["/usr/share/themes", os.path.join(HOME, ".themes"),
+                os.path.join(DADOS, "themes")]
+PASTAS_ICONES = ["/usr/share/icons", os.path.join(HOME, ".icons"),
+                 os.path.join(DADOS, "icons")]
+
+# padrão VoidBR (o mesmo do voidbr-labwc-session no primeiro login)
+VOIDBR_APARENCIA = {
+    "gtk": "Tokyonight-Dark-Theme",
+    "icones": "Tokyonight-Dark-Icons",
+    "cursor": "Nordic-cursors",
+    "cursor_tam": 24,
+    "fonte_ui": "Noto Sans",
+    "fonte_ui_tam": 10,
+    "escuro": True,
+}
+
+BOTOES = [
+    ("icon:iconify,max,close", "À direita (Windows/Linux)"),
+    ("close,iconify,max:", "À esquerda (estilo Mac)"),
+    (":iconify,max,close", "À direita, sem o ícone do app"),
+    (":close", "Só o botão fechar"),
+]
+ESTILOS = [("ilha", "Ilha VoidBR (flutuante, cantos arredondados)"),
+           ("inteira", "Inteira (de ponta a ponta, colada na borda)")]
+POSICOES = [("top", "Em cima"), ("bottom", "Embaixo")]
+MODELOS = [("abnt2", "ABNT2 (teclado brasileiro com Ç)"), ("pc105", "Internacional (pc105)"),
+           ("pc104", "Americano (pc104)")]
+ALTERNAR = [("grp:alt_shift_toggle", "Alt + Shift"), ("grp:shift_caps_toggle", "Shift + Caps Lock"),
+            ("grp:ctrl_shift_toggle", "Ctrl + Shift"), ("grp:caps_toggle", "Caps Lock"),
+            ("", "Não alternar")]
+
+# módulos da Waybar: (nome, seção padrão, título, dica)
+MODULOS = [
+    ("wlr/taskbar", "modules-left", "Janelas abertas", "ícones das janelas; clique alterna, "
+                                                       "botão do meio fecha"),
+    ("clock", "modules-center", "Relógio e calendário", None),
+    ("mpris", "modules-right", "Mídia tocando", "música ou vídeo em reprodução"),
+    ("privacy", "modules-right", "Privacidade", "aviso de microfone ou tela em uso"),
+    ("tray", "modules-right", "Bandeja", "rede, Bluetooth, pendrives e apps em segundo plano"),
+    ("power-profiles-daemon", "modules-right", "Perfil de energia", "eco / equilibrado / "
+                                                                    "desempenho"),
+    ("cpu", "modules-right", "CPU", None),
+    ("memory", "modules-right", "Memória", None),
+    ("wireplumber", "modules-right", "Volume", None),
+    ("network", "modules-right", "Rede", None),
+    ("battery", "modules-right", "Bateria", "só aparece em notebook"),
+    ("idle_inhibitor", "modules-right", "Xícara (tela sempre ligada)", None),
+]
+# ordem de cada seção no padrão VoidBR (para devolver um módulo ao lugar certo)
+ORDEM = {
+    "modules-left": ["custom/menu", "ext/workspaces", "wlr/taskbar"],
+    "modules-center": ["clock"],
+    "modules-right": ["mpris", "privacy", "tray", "power-profiles-daemon", "cpu", "memory",
+                      "wireplumber", "network", "battery", "idle_inhibitor", "custom/power"],
+}
+
+CSS_INICIO = "/* voidbr-labwc-tweaks: início (gerado pelo app; edite pelo VoidBR Labwc Tweaks) */"
+CSS_FIM = "/* voidbr-labwc-tweaks: fim */"
+
+CSS = """
+window { background-color: #1e1f29; }
+label { color: #f1f1f1; }
+.titulo-app { font-size: 20px; font-weight: 800; color: #9ece6a; }
+.subtitulo { color: #a9b1d6; font-size: 12px; }
+.rotulo-campo { font-weight: bold; }
+.dica { color: #8a8fa8; font-size: 11px; }
+.secao { color: #7aa2f7; font-weight: bold; margin-top: 6px; }
+.aviso { color: #e0af68; }
+.conteudo button.botao-verde, .botao-verde { background: linear-gradient(180deg, #34d399, #059669); color: white;
+    font-weight: bold; border-radius: 10px; padding: 10px 14px; }
+.conteudo button.botao-verde:hover, .botao-verde:hover { background: #34d399; }
+.conteudo button.botao-laranja, .botao-laranja { background: linear-gradient(180deg, #fbbf24, #d97706); color: white;
+    font-weight: bold; border-radius: 10px; padding: 10px 14px; }
+.conteudo button.botao-laranja:hover, .botao-laranja:hover { background: #fbbf24; }
+.conteudo button.botao-azul, .botao-azul { background: linear-gradient(180deg, #60a5fa, #2563eb); color: white;
+    font-weight: bold; border-radius: 10px; padding: 10px 14px; }
+.conteudo button.botao-azul:hover, .botao-azul:hover { background: #60a5fa; }
+.caixa-status { background-color: #2a2b3a; border-radius: 10px; padding: 8px; }
+.cabecalho-app { background-color: #1a1b26; color: #f1f1f1; }
+.botao-fonte { font-weight: bold; padding: 2px 10px; min-height: 24px; background: #3b3d52;
+    color: #f1f1f1; border: 1px solid #4b4e66; }
+.botao-fonte label { color: #f1f1f1; }
+.botao-fonte:hover { background: #4b4e66; }
+.botao-fonte:disabled { background: #2a2b3a; }
+notebook > header, notebook > stack, scrolledwindow, viewport { background-color: #24283b; }
+notebook > header tab label { color: #a9b1d6; }
+notebook > header tab:checked label { color: #ffffff; }
+.conteudo button { background: #3b3d52; color: #f1f1f1; border: 1px solid #4b4e66; }
+.conteudo button label { color: #f1f1f1; }
+.conteudo entry { background: #1a1b26; color: #f1f1f1; }
+popover contents, popover arrow { background-color: #2a2b3a; }
+window.dialog button, window.messagedialog button { background: #3b3d52; border: 1px solid #4b4e66; }
+window.dialog button label, window.messagedialog button label { color: #f1f1f1; }
+window.dialog button:hover, window.messagedialog button:hover { background: #4b4e66; }
+"""
+
+
+# ---------------------------------------------------------------------------
+#   preferências do próprio app
+# ---------------------------------------------------------------------------
+
+def ler_prefs_app():
+    try:
+        with open(PREFS_APP, encoding="utf-8") as f:
+            dados = json.load(f)
+        return dados if isinstance(dados, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def gravar_prefs_app(**valores):
+    dados = ler_prefs_app()
+    dados.update(valores)
+    os.makedirs(os.path.dirname(PREFS_APP), exist_ok=True)
+    with open(PREFS_APP, "w", encoding="utf-8") as f:
+        json.dump(dados, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def ler_texto(caminho, padrao=""):
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return padrao
+
+
+def gravar_texto(caminho, texto):
+    """Grava num .tmp e renomeia: quem estiver lendo nunca vê o arquivo pela metade."""
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    tmp = caminho + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(texto)
+    os.replace(tmp, caminho)
+
+
+def garantir_do_skel(caminho, relativo):
+    """Usuário sem o arquivo (skel não copiado): parte do padrão VoidBR."""
+    if not os.path.exists(caminho):
+        origem = os.path.join(SKEL, relativo)
+        if os.path.exists(origem):
+            os.makedirs(os.path.dirname(caminho), exist_ok=True)
+            shutil.copy2(origem, caminho)
+
+
+def sim(v):
+    return str(v).strip().lower() in ("yes", "true", "on", "1")
+
+
+# ---------------------------------------------------------------------------
+#   rc.xml (labwc)
+# ---------------------------------------------------------------------------
+
+def rc_ler():
+    garantir_do_skel(RC, "labwc/rc.xml")
+    try:
+        parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
+        return ET.parse(RC, parser).getroot()
+    except (OSError, ET.ParseError):
+        return ET.Element("labwc_config")
+
+
+def rc_gravar(raiz):
+    ET.indent(raiz, space="  ")
+    texto = ET.tostring(raiz, encoding="unicode")
+    gravar_texto(RC, '<?xml version="1.0"?>\n' + texto + "\n")
+
+
+def no(raiz, caminho, criar=False):
+    """Elemento por caminho "a/b/c"; com criar=True cria o que faltar."""
+    atual = raiz
+    for parte in caminho.split("/"):
+        prox = atual.find(parte)
+        if prox is None:
+            if not criar:
+                return None
+            prox = ET.SubElement(atual, parte)
+        atual = prox
+    return atual
+
+
+def texto_de(raiz, caminho, padrao=None):
+    """Valor de um nó: no labwc tanto <a><b>x</b></a> quanto <a b="x"/> valem."""
+    e = no(raiz, caminho)
+    if e is not None and e.text and e.text.strip():
+        return e.text.strip()
+    pai, _, nome = caminho.rpartition("/")
+    p = no(raiz, pai) if pai else raiz
+    if p is not None and nome in p.attrib:
+        return p.attrib[nome]
+    return padrao
+
+
+def definir(raiz, caminho, valor):
+    pai, _, nome = caminho.rpartition("/")
+    p = no(raiz, pai, criar=True) if pai else raiz
+    if nome in p.attrib:  # já estava como atributo: continua como atributo
+        p.attrib[nome] = str(valor)
+        return
+    no(raiz, caminho, criar=True).text = str(valor)
+
+
+def fontes_tema(raiz):
+    tema = no(raiz, "theme", criar=True)
+    fontes = tema.findall("font")
+    if not fontes:
+        fontes = [ET.SubElement(tema, "font")]
+    return fontes
+
+
+def fonte_valor(f, chave):
+    filho = f.find(chave)
+    if filho is not None and filho.text:
+        return filho.text.strip()
+    return f.attrib.get(chave)
+
+
+def fonte_definir(f, chave, valor):
+    filho = f.find(chave)
+    if filho is not None:
+        filho.text = str(valor)
+    else:
+        f.attrib[chave] = str(valor)
+
+
+def libinput_touchpad(raiz, criar=False):
+    li = no(raiz, "libinput", criar=criar)
+    if li is None:
+        return None
+    for d in li.findall("device"):
+        if d.attrib.get("category") == "touchpad":
+            return d
+    if criar:
+        return ET.SubElement(li, "device", {"category": "touchpad"})
+    return None
+
+
+def areas_ler(raiz):
+    d = no(raiz, "desktops")
+    if d is None:
+        return 1, ["1"], True
+    nomes = [n.text.strip() for n in d.findall("names/name") if n.text and n.text.strip()]
+    try:
+        num = int(d.attrib.get("number") or texto_de(raiz, "desktops/number", 0) or 0)
+    except ValueError:
+        num = 0
+    num = max(num, len(nomes), 1)
+    while len(nomes) < num:
+        nomes.append(str(len(nomes) + 1))
+    aviso = texto_de(raiz, "desktops/popupTime", "1000") != "0"
+    return num, nomes, aviso
+
+
+def areas_gravar(raiz, num, nomes, aviso):
+    d = no(raiz, "desktops", criar=True)
+    d.attrib.pop("number", None)
+    for filho in list(d):
+        if filho.tag in ("names", "number", "prefix"):
+            d.remove(filho)
+    caixa = ET.Element("names")
+    for i in range(num):
+        ET.SubElement(caixa, "name").text = nomes[i] if i < len(nomes) and nomes[i] else str(i + 1)
+    d.insert(0, caixa)
+    definir(raiz, "desktops/popupTime", 600 if aviso else 0)
+    # atalhos Super+N e Super+Shift+N: refeitos para as áreas que existem
+    teclado = no(raiz, "keyboard", criar=True)
+    padrao_tecla = re.compile(r"^W-(S-)?[0-9]$")
+    pos = None
+    for i, kb in enumerate(list(teclado)):
+        if kb.tag != "keybind" or not padrao_tecla.match(kb.attrib.get("key", "")):
+            continue
+        acoes = [a.attrib.get("name") for a in kb.findall("action")]
+        if acoes and all(a in ("GoToDesktop", "SendToDesktop") for a in acoes):
+            if pos is None:
+                pos = list(teclado).index(kb)
+            teclado.remove(kb)
+    if pos is None:
+        pos = len(teclado)
+    novos = []
+    for n in range(1, min(num, 9) + 1):
+        for mod, acao in (("W-", "GoToDesktop"), ("W-S-", "SendToDesktop")):
+            kb = ET.Element("keybind", {"key": f"{mod}{n}"})
+            ET.SubElement(kb, "action", {"name": acao, "to": str(n)})
+            novos.append(kb)
+    for j, kb in enumerate(novos):
+        teclado.insert(pos + j, kb)
+
+
+# ---------------------------------------------------------------------------
+#   environment (labwc)
+# ---------------------------------------------------------------------------
+
+def env_ler():
+    garantir_do_skel(ENV, "labwc/environment")
+    vals = {}
+    for linha in ler_texto(ENV).splitlines():
+        linha = linha.strip()
+        if linha and not linha.startswith("#") and "=" in linha:
+            k, _, v = linha.partition("=")
+            vals[k.strip()] = v.strip()
+    return vals
+
+
+def env_gravar(novos):
+    """Troca só as variáveis pedidas; comentários e o resto ficam. Valor None remove."""
+    linhas = ler_texto(ENV).splitlines()
+    feitos = set()
+    saida = []
+    for linha in linhas:
+        s = linha.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k = s.partition("=")[0].strip()
+            if k in novos:
+                feitos.add(k)
+                if novos[k] is not None:
+                    saida.append(f"{k}={novos[k]}")
+                continue
+        saida.append(linha)
+    for k, v in novos.items():
+        if k not in feitos and v is not None:
+            saida.append(f"{k}={v}")
+    gravar_texto(ENV, "\n".join(saida).rstrip("\n") + "\n")
+
+
+# ---------------------------------------------------------------------------
+#   Waybar
+# ---------------------------------------------------------------------------
+
+def waybar_config():
+    for nome in ("config.jsonc", "config"):
+        c = os.path.join(WAYBAR_DIR, nome)
+        if os.path.exists(c):
+            return c
+    c = os.path.join(WAYBAR_DIR, "config.jsonc")
+    garantir_do_skel(c, "waybar/config.jsonc")
+    return c
+
+
+def sem_comentarios(texto):
+    """Tira // e /* */ do JSONC sem mexer no que está dentro de aspas."""
+    saida, i, n = [], 0, len(texto)
+    while i < n:
+        c = texto[i]
+        if c == '"':
+            j = i + 1
+            while j < n and texto[j] != '"':
+                j += 2 if texto[j] == "\\" else 1
+            saida.append(texto[i:j + 1])
+            i = j + 1
+        elif texto.startswith("//", i):
+            while i < n and texto[i] != "\n":
+                i += 1
+        elif texto.startswith("/*", i):
+            fim = texto.find("*/", i + 2)
+            i = n if fim < 0 else fim + 2
+        else:
+            saida.append(c)
+            i += 1
+    # vírgula sobrando antes de } ou ] (aceita pela Waybar, não pelo json)
+    return re.sub(r",(\s*[}\]])", r"\1", "".join(saida))
+
+
+def waybar_ler():
+    caminho = waybar_config()
+    try:
+        dados = json.loads(sem_comentarios(ler_texto(caminho, "{}")))
+    except ValueError:
+        dados = {}
+    if isinstance(dados, list):  # várias barras: o app ajusta a primeira
+        dados = dados[0] if dados else {}
+    return dados
+
+
+def _pular(texto, i):
+    """Índice depois de uma string, comentário ou caractere comum em i."""
+    if texto[i] == '"':
+        j = i + 1
+        while j < len(texto) and texto[j] != '"':
+            j += 2 if texto[j] == "\\" else 1
+        return j + 1
+    if texto.startswith("//", i):
+        fim = texto.find("\n", i)
+        return len(texto) if fim < 0 else fim
+    if texto.startswith("/*", i):
+        fim = texto.find("*/", i + 2)
+        return len(texto) if fim < 0 else fim + 2
+    return i + 1
+
+
+def _fim_valor(texto, i):
+    """Fim do valor JSON que começa em i (string, número, lista ou objeto)."""
+    if texto[i] == '"':
+        return _pular(texto, i)
+    if texto[i] in "[{":
+        nivel = 0
+        while i < len(texto):
+            c = texto[i]
+            if c in "[{":
+                nivel += 1
+            elif c in "]}":
+                nivel -= 1
+                if nivel == 0:
+                    return i + 1
+            i = _pular(texto, i)
+        return i
+    m = re.compile(r"[^,\s}\]/]+").match(texto, i)
+    return m.end() if m else i
+
+
+def _chaves_topo(texto):
+    """{chave: (início, fim) do valor} no primeiro objeto da config, e onde ele abre."""
+    achadas, nivel, abre, i = {}, 0, None, 0
+    alvo = None
+    while i < len(texto):
+        c = texto[i]
+        if c in "[{":
+            nivel += 1
+            if alvo is None and c == "{":
+                alvo, abre = nivel, i  # {…} solto ou o primeiro de [{…}, …]
+            i += 1
+        elif c in "]}":
+            if nivel == alvo:
+                break
+            nivel -= 1
+            i += 1
+        elif c == '"' and nivel == alvo:
+            fim = _pular(texto, i)
+            m = re.compile(r"\s*:\s*").match(texto, fim)
+            if m:
+                chave = json.loads(texto[i:fim])
+                ini = m.end()
+                achadas.setdefault(chave, (ini, _fim_valor(texto, ini)))
+                i = achadas[chave][1]
+            else:
+                i = fim
+        else:
+            i = _pular(texto, i)
+    return achadas, abre
+
+
+def _formatar(valor, antigo, recuo):
+    """Lista em várias linhas se ela já estava assim; o resto numa linha só."""
+    if isinstance(valor, list) and "\n" in antigo:
+        itens = ",\n".join(f"{recuo}  {json.dumps(x, ensure_ascii=False)}" for x in valor)
+        return f"[\n{itens}\n{recuo}]" if valor else "[]"
+    return json.dumps(valor, ensure_ascii=False)
+
+
+def waybar_gravar(mudancas):
+    """Troca só os valores pedidos no texto do arquivo: comentários, ordem e o
+    resto da config do usuário ficam como estão."""
+    caminho = waybar_config()
+    texto = ler_texto(caminho, "{}\n")
+    for chave, valor in mudancas.items():
+        achadas, abre = _chaves_topo(texto)
+        if chave in achadas:
+            ini, fim = achadas[chave]
+            inicio_linha = texto.rfind("\n", 0, ini) + 1
+            recuo = re.match(r"\s*", texto[inicio_linha:]).group(0)
+            texto = texto[:ini] + _formatar(valor, texto[ini:fim], recuo) + texto[fim:]
+        elif abre is not None:  # chave nova: entra logo depois do "{", no recuo das outras
+            m = re.compile(r"[ \t]*\n([ \t]+)").match(texto, abre + 1)
+            recuo = m.group(1) if m else "  "
+            novo = f'\n{recuo}"{chave}": {json.dumps(valor, ensure_ascii=False)},'
+            texto = texto[:abre + 1] + novo + texto[abre + 1:]
+    gravar_texto(caminho, texto)
+
+
+def modulos_ativos(dados):
+    ativos = set()
+    for secao in ORDEM:
+        ativos.update(dados.get(secao, []))
+    return {m: (m in ativos) for m, *_ in MODULOS}
+
+
+def modulos_aplicar(dados, escolha):
+    for nome, secao, *_ in MODULOS:
+        ligado = escolha.get(nome)
+        presente = [s for s in ORDEM if nome in dados.get(s, [])]
+        if not ligado:
+            for s in presente:
+                dados[s] = [m for m in dados[s] if m != nome]
+        elif not presente:
+            lista = list(dados.get(secao, []))
+            ordem = ORDEM[secao]
+            # entra logo depois do último vizinho que vem antes dele no padrão VoidBR
+            pos = 0
+            for i, m in enumerate(lista):
+                if m in ordem and ordem.index(m) < ordem.index(nome):
+                    pos = i + 1
+            lista.insert(pos, nome)
+            dados[secao] = lista
+
+
+def css_bloco(estilo, posicao, opacidade):
+    a = max(0.3, min(1.0, opacidade / 100))
+    fundo = f"rgba(26, 27, 38, {a:.2f})"
+    if estilo == "ilha":
+        corpo = (f"window#waybar {{\n  background: {fundo};\n  border-radius: 10px;\n"
+                 f"  border: 1px solid #2a2e42;\n}}\n")
+    else:
+        lado = "bottom" if posicao == "top" else "top"
+        corpo = (f"window#waybar {{\n  background: {fundo};\n  border-radius: 0;\n"
+                 f"  border: none;\n  border-{lado}: 1px solid #2a2e42;\n}}\n")
+    return (f"{CSS_INICIO}\n/* estilo: {estilo} | opacidade: {int(opacidade)} */\n"
+            f"{corpo}{CSS_FIM}\n")
+
+
+def css_ler():
+    garantir_do_skel(WAYBAR_CSS, "waybar/style.css")
+    texto = ler_texto(WAYBAR_CSS)
+    m = re.search(r"/\* estilo: (\w+) \| opacidade: (\d+) \*/", texto)
+    if m:
+        return m.group(1), int(m.group(2))
+    return "ilha", 92
+
+
+def css_gravar(estilo, posicao, opacidade):
+    texto = ler_texto(WAYBAR_CSS)
+    bloco = css_bloco(estilo, posicao, opacidade)
+    padrao = re.compile(re.escape(CSS_INICIO) + r".*?" + re.escape(CSS_FIM) + r"\n?", re.S)
+    if padrao.search(texto):
+        texto = padrao.sub(lambda _m: bloco, texto)
+    else:  # no fim do arquivo: vale por cima das regras de antes
+        texto = texto.rstrip("\n") + "\n\n" + bloco
+    gravar_texto(WAYBAR_CSS, texto)
+
+
+def margem(estilo, posicao):
+    if estilo != "ilha":
+        return "0"
+    return "6 10 0 10" if posicao == "top" else "0 10 6 10"
+
+
+# ---------------------------------------------------------------------------
+#   gsettings, xsettingsd e listas de temas
+# ---------------------------------------------------------------------------
+
+def gs_ler(chave, padrao=None):
+    try:
+        r = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", chave],
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return padrao
+    v = r.stdout.strip()
+    if r.returncode != 0 or not v:
+        return padrao
+    if v.startswith("uint32 "):
+        v = v[7:]
+    return v.strip("'")
+
+
+def gs_gravar(chave, valor):
+    try:
+        subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", chave, str(valor)],
+                       capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def xsettingsd_gravar(v):
+    garantir_do_skel(XSETTINGSD, "xsettingsd/xsettingsd.conf")
+    novos = {
+        "Net/ThemeName": f'"{v["gtk"]}"',
+        "Net/IconThemeName": f'"{v["icones"]}"',
+        "Gtk/CursorThemeName": f'"{v["cursor"]}"',
+        "Gtk/CursorThemeSize": str(v["cursor_tam"]),
+        "Gtk/FontName": f'"{v["fonte_ui"]} {v["fonte_ui_tam"]}"',
+    }
+    saida, feitos = [], set()
+    for linha in ler_texto(XSETTINGSD).splitlines():
+        k = linha.split(None, 1)[0] if linha.strip() and not linha.startswith("#") else None
+        if k in novos:
+            saida.append(f"{k} {novos[k]}")
+            feitos.add(k)
+        else:
+            saida.append(linha)
+    saida += [f"{k} {val}" for k, val in novos.items() if k not in feitos]
+    gravar_texto(XSETTINGSD, "\n".join(saida) + "\n")
+    sinal("xsettingsd", signal.SIGHUP)
+
+
+def _pastas(raizes, exige):
+    nomes = set()
+    for raiz in raizes:
+        for d in glob.glob(os.path.join(raiz, "*")):
+            if any(os.path.exists(os.path.join(d, e)) for e in exige):
+                nomes.add(os.path.basename(d))
+    return [(n, n) for n in sorted(nomes, key=str.lower)]
+
+
+def temas_labwc():
+    return _pastas(PASTAS_TEMAS, ("labwc/themerc", "openbox-3/themerc"))
+
+
+def temas_gtk():
+    return _pastas(PASTAS_TEMAS, ("gtk-3.0", "gtk-4.0"))
+
+
+def temas_cursor():
+    return _pastas(PASTAS_ICONES, ("cursors",))
+
+
+def temas_icones():
+    nomes = set()
+    for raiz in PASTAS_ICONES:
+        for idx in glob.glob(os.path.join(raiz, "*", "index.theme")):
+            if "Directories=" in ler_texto(idx):  # tema só de cursor não tem
+                nomes.add(os.path.basename(os.path.dirname(idx)))
+    return [(n, n) for n in sorted(nomes, key=str.lower)]
+
+
+def papeis():
+    lista = []
+    for arq in sorted(glob.glob(os.path.join(PAPEL_PASTA, "*")), key=str.lower):
+        if arq.lower().endswith(PAPEL_EXT):
+            nome = os.path.splitext(os.path.basename(arq))[0].replace("_", " ").replace("-", " ")
+            lista.append((arq, nome))
+    return lista
+
+
+# ---------------------------------------------------------------------------
+#   processos da sessão
+# ---------------------------------------------------------------------------
+
+def rodando(nome):
+    return subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", nome],
+                          capture_output=True).returncode == 0
+
+
+def sinal(nome, sig):
+    subprocess.run(["pkill", f"-{int(sig)}", "-u", str(os.getuid()), "-x", nome],
+                   capture_output=True)
+
+
+def em_segundo_plano(cmd):
+    """Sobe um programa que continua depois que o app fecha."""
+    subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def labwc_rodando():
+    return bool(os.environ.get("LABWC_PID")) or rodando("labwc")
+
+
+def labwc_recarregar():
+    if labwc_rodando():
+        subprocess.run(["labwc", "--reconfigure"], capture_output=True)
+
+
+def waybar_recarregar():
+    if rodando("waybar"):
+        sinal("waybar", signal.SIGUSR2)  # relê config e style.css
+    elif os.environ.get("WAYLAND_DISPLAY") and shutil.which("waybar"):
+        em_segundo_plano(["waybar"])
+
+
+def papel_aplicar(caminho, modo):
+    os.makedirs(os.path.dirname(PAPEL_LINK), exist_ok=True)
+    if os.path.islink(PAPEL_LINK) or os.path.exists(PAPEL_LINK):
+        os.remove(PAPEL_LINK)
+    os.symlink(caminho, PAPEL_LINK)
+    gravar_prefs_app(papel_modo=modo)
+    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("swaybg"):
+        subprocess.run(["pkill", "-u", str(os.getuid()), "-x", "swaybg"], capture_output=True)
+        em_segundo_plano(["swaybg", "-i", PAPEL_LINK, "-m", modo])
+
+
+# ---------------------------------------------------------------------------
+#   valores atuais e aplicação
+# ---------------------------------------------------------------------------
+
+def valores_atuais():
+    rc = rc_ler()
+    env = env_ler()
+    wb = waybar_ler()
+    estilo, opacidade = css_ler()
+    fontes = fontes_tema(rc)
+    f0 = fontes[0]
+    num, nomes, aviso = areas_ler(rc)
+    tp = libinput_touchpad(rc)
+    opcoes = [o for o in env.get("XKB_DEFAULT_OPTIONS", "").split(",") if o]
+    alternar = next((o for o in opcoes if o.startswith("grp:")), "")
+    fonte_ui = gs_ler("font-name", "Noto Sans 10") or "Noto Sans 10"
+    m = re.match(r"^(.*?)\s+(\d+(?:\.\d+)?)$", fonte_ui)
+    try:
+        cursor_tam = int(gs_ler("cursor-size", env.get("XCURSOR_SIZE", "24")) or 24)
+    except ValueError:
+        cursor_tam = 24
+    try:
+        papel = os.path.realpath(PAPEL_LINK) if os.path.lexists(PAPEL_LINK) else ""
+    except OSError:
+        papel = ""
+
+    def tp_val(chave, padrao):
+        if tp is None:
+            return padrao
+        e = tp.find(chave)
+        return e.text.strip() if e is not None and e.text else padrao
+
+    try:
+        velocidade = float(tp_val("pointerSpeed", "0"))
+    except ValueError:
+        velocidade = 0.0
+    return {
+        # janelas
+        "tema": texto_de(rc, "theme/name", ""),
+        "raio": int(float(texto_de(rc, "theme/cornerRadius", "8"))),
+        "sombras": sim(texto_de(rc, "theme/dropShadows", "no")),
+        "botoes": texto_de(rc, "theme/titlebar/layout", "icon:iconify,max,close"),
+        "fonte_nome": fonte_valor(f0, "name") or "sans",
+        "fonte_tam": int(float(fonte_valor(f0, "size") or 10)),
+        "espaco": int(float(texto_de(rc, "core/gap", "0"))),
+        "foco_mouse": sim(texto_de(rc, "focus/followMouse", "no")),
+        # barra
+        "estilo": estilo if estilo in dict(ESTILOS) else "ilha",
+        "posicao": wb.get("position", "top") if wb.get("position") in dict(POSICOES) else "top",
+        "altura": int(wb.get("height", 34) or 34),
+        "opacidade": opacidade,
+        "modulos": modulos_ativos(wb),
+        # aparência
+        "gtk": gs_ler("gtk-theme", VOIDBR_APARENCIA["gtk"]),
+        "icones": gs_ler("icon-theme", VOIDBR_APARENCIA["icones"]),
+        "cursor": gs_ler("cursor-theme", env.get("XCURSOR_THEME", VOIDBR_APARENCIA["cursor"])),
+        "cursor_tam": cursor_tam,
+        "fonte_ui": m.group(1) if m else fonte_ui,
+        "fonte_ui_tam": int(float(m.group(2))) if m else 10,
+        "escuro": gs_ler("color-scheme", "prefer-dark") == "prefer-dark",
+        # papel de parede
+        "papel": papel,
+        "papel_modo": ler_prefs_app().get("papel_modo", "fill"),
+        # teclado e touchpad
+        "layouts": env.get("XKB_DEFAULT_LAYOUT", "br"),
+        "variante": env.get("XKB_DEFAULT_VARIANT", ""),
+        "modelo": env.get("XKB_DEFAULT_MODEL", "pc105"),
+        "alternar": alternar,
+        "numlock": texto_de(rc, "keyboard/numlock", "off") == "on",
+        "repeticao": int(float(texto_de(rc, "keyboard/repeatRate", "25"))),
+        "atraso": int(float(texto_de(rc, "keyboard/repeatDelay", "600"))),
+        "toque": sim(tp_val("tap", "yes")),
+        "natural": sim(tp_val("naturalScroll", "no")),
+        "digitando": sim(tp_val("disableWhileTyping", "yes")),
+        "velocidade": velocidade,
+        # áreas de trabalho
+        "areas_num": num,
+        "areas_nomes": ", ".join(nomes),
+        "areas_aviso": aviso,
+        "_xkb_opcoes": opcoes,
+    }
+
+
+GRUPOS = {
+    "janelas": ("tema", "raio", "sombras", "botoes", "fonte_nome", "fonte_tam", "espaco",
+                "foco_mouse"),
+    "barra": ("estilo", "posicao", "altura", "opacidade", "modulos"),
+    "aparencia": ("gtk", "icones", "cursor", "cursor_tam", "fonte_ui", "fonte_ui_tam", "escuro"),
+    "papel": ("papel", "papel_modo"),
+    "teclado": ("layouts", "variante", "modelo", "alternar", "numlock", "repeticao", "atraso"),
+    "touchpad": ("toque", "natural", "digitando", "velocidade"),
+    "areas": ("areas_num", "areas_nomes", "areas_aviso"),
+}
+NOMES_GRUPOS = {"janelas": "janelas", "barra": "barra", "aparencia": "aparência",
+                "papel": "papel de parede", "teclado": "teclado", "touchpad": "touchpad",
+                "areas": "áreas de trabalho"}
+NOMES = [k for chaves in GRUPOS.values() for k in chaves]
+
+
+def aplicar(v, antes, progresso=lambda _t: None):
+    mudou = [g for g, chaves in GRUPOS.items() if any(v[k] != antes.get(k) for k in chaves)]
+    if not mudou:
+        return []
+    rc_muda = {"janelas", "teclado", "touchpad", "areas", "aparencia"} & set(mudou)
+    rc = rc_ler() if rc_muda else None
+
+    if "janelas" in mudou:
+        progresso("Janelas…")
+        if v["tema"]:
+            definir(rc, "theme/name", v["tema"])
+        definir(rc, "theme/cornerRadius", v["raio"])
+        definir(rc, "theme/dropShadows", "yes" if v["sombras"] else "no")
+        definir(rc, "theme/titlebar/layout", v["botoes"])
+        for f in fontes_tema(rc):
+            fonte_definir(f, "name", v["fonte_nome"])
+            fonte_definir(f, "size", v["fonte_tam"])
+        definir(rc, "core/gap", v["espaco"])
+        definir(rc, "focus/followMouse", "yes" if v["foco_mouse"] else "no")
+
+    if "teclado" in mudou:
+        progresso("Teclado…")
+        opcoes = [o for o in v.get("_xkb_opcoes", []) if not o.startswith("grp:")]
+        if v["alternar"]:
+            opcoes.insert(0, v["alternar"])
+        env_gravar({
+            "XKB_DEFAULT_LAYOUT": v["layouts"].replace(" ", "") or "br",
+            "XKB_DEFAULT_VARIANT": v["variante"].replace(" ", "") or None,
+            "XKB_DEFAULT_MODEL": v["modelo"],
+            "XKB_DEFAULT_OPTIONS": ",".join(opcoes) or None,
+        })
+        definir(rc, "keyboard/numlock", "on" if v["numlock"] else "off")
+        definir(rc, "keyboard/repeatRate", v["repeticao"])
+        definir(rc, "keyboard/repeatDelay", v["atraso"])
+
+    if "touchpad" in mudou:
+        progresso("Touchpad…")
+        tp = libinput_touchpad(rc, criar=True)
+        for chave, val in (("tap", "yes" if v["toque"] else "no"),
+                           ("naturalScroll", "yes" if v["natural"] else "no"),
+                           ("disableWhileTyping", "yes" if v["digitando"] else "no"),
+                           ("pointerSpeed", f"{v['velocidade']:.1f}")):
+            e = tp.find(chave)
+            if e is None:
+                e = ET.SubElement(tp, chave)
+            e.text = val
+
+    if "areas" in mudou:
+        progresso("Áreas de trabalho…")
+        nomes = [n.strip() for n in v["areas_nomes"].split(",")]
+        areas_gravar(rc, v["areas_num"], nomes, v["areas_aviso"])
+
+    if "aparencia" in mudou:
+        progresso("Aparência…")
+        gs_gravar("gtk-theme", v["gtk"])
+        gs_gravar("icon-theme", v["icones"])
+        gs_gravar("cursor-theme", v["cursor"])
+        gs_gravar("cursor-size", v["cursor_tam"])
+        gs_gravar("font-name", f"{v['fonte_ui']} {v['fonte_ui_tam']}")
+        gs_gravar("color-scheme", "prefer-dark" if v["escuro"] else "default")
+        xsettingsd_gravar(v)
+        env_gravar({"XCURSOR_THEME": v["cursor"], "XCURSOR_SIZE": v["cursor_tam"]})
+        definir(rc, "theme/icon", v["icones"])  # ícones na barra de título e nos menus
+
+    if rc is not None:
+        rc_gravar(rc)
+        progresso("Recarregando o labwc…")
+        labwc_recarregar()
+
+    if "barra" in mudou:
+        progresso("Barra…")
+        wb = waybar_ler()
+        modulos_aplicar(wb, v["modulos"])
+        mudancas = {"position": v["posicao"], "height": v["altura"],
+                    "margin": margem(v["estilo"], v["posicao"])}
+        mudancas.update({s: wb.get(s, []) for s in ORDEM})
+        waybar_gravar(mudancas)
+        css_gravar(v["estilo"], v["posicao"], v["opacidade"])
+        waybar_recarregar()
+
+    if "papel" in mudou and v["papel"]:
+        progresso("Papel de parede…")
+        papel_aplicar(v["papel"], v["papel_modo"])
+
+    return [NOMES_GRUPOS[g] for g in mudou]
+
+
+def fazer_backup():
+    destino = os.path.join(BACKUP_DIR, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    for arq in (RC, ENV, waybar_config(), WAYBAR_CSS, XSETTINGSD):
+        if os.path.exists(arq):
+            rel = os.path.relpath(arq, CONFIG)
+            os.makedirs(os.path.dirname(os.path.join(destino, rel)), exist_ok=True)
+            shutil.copy2(arq, os.path.join(destino, rel))
+    return destino
+
+
+def restaurar(base, progresso=lambda _t: None):
+    """base: "voidbr" (skel completo) ou "labwc" (rc.xml original do labwc)."""
+    progresso("Guardando a configuração atual…")
+    destino = fazer_backup()
+    if base == "voidbr":
+        progresso("Voltando ao padrão VoidBR…")
+        for rel in ("labwc/rc.xml", "labwc/environment", "waybar/config.jsonc",
+                    "waybar/style.css", "xsettingsd/xsettingsd.conf"):
+            origem = os.path.join(SKEL, rel)
+            if os.path.exists(origem):
+                alvo = os.path.join(CONFIG, rel)
+                os.makedirs(os.path.dirname(alvo), exist_ok=True)
+                shutil.copy2(origem, alvo)
+        velho = os.path.join(WAYBAR_DIR, "config")
+        if os.path.exists(velho):  # a Waybar daria preferência ao "config"
+            os.rename(velho, velho + ".bak")
+        a = VOIDBR_APARENCIA
+        for chave, val in (("gtk-theme", a["gtk"]), ("icon-theme", a["icones"]),
+                           ("cursor-theme", a["cursor"]), ("cursor-size", a["cursor_tam"]),
+                           ("font-name", f"{a['fonte_ui']} {a['fonte_ui_tam']}"),
+                           ("color-scheme", "prefer-dark")):
+            gs_gravar(chave, val)
+        sinal("xsettingsd", signal.SIGHUP)
+        if os.path.exists(PAPEL_VOIDBR):
+            papel_aplicar(PAPEL_VOIDBR, "fill")
+        waybar_recarregar()
+    else:
+        progresso("Voltando ao padrão do labwc…")
+        if os.path.exists(RC_LABWC):
+            shutil.copy2(RC_LABWC, RC)
+        else:
+            gravar_texto(RC, '<?xml version="1.0"?>\n<labwc_config>\n  <keyboard>\n'
+                             '    <default />\n  </keyboard>\n  <mouse>\n    <default />\n'
+                             '  </mouse>\n</labwc_config>\n')
+    labwc_recarregar()
+    return destino
+
+
+# ---------------------------------------------------------------------------
+#   interface
+# ---------------------------------------------------------------------------
+
+def _escolha(dd, opcoes, valor):
+    for i, (v, _r) in enumerate(opcoes):
+        if v == valor:
+            dd.set_selected(i)
+            return
+    if valor not in (None, ""):
+        # valor que não está na lista (ex.: tema removido): mostra mesmo assim
+        rotulo = f"{os.path.basename(str(valor))} (atual)"
+        opcoes.append((valor, rotulo))
+        dd.get_model().append(rotulo)
+        dd.set_selected(len(opcoes) - 1)
+
+
+def familias_fonte(widget):
+    try:
+        nomes = sorted({f.get_name() for f in widget.get_pango_context().list_families()},
+                       key=str.lower)
+    except Exception:  # noqa: BLE001 - sem Pango: só as fontes do VoidBR
+        nomes = []
+    for n in ("Noto Sans", "sans", "DejaVu Sans", "Cantarell"):
+        if n not in nomes:
+            nomes.append(n)
+    return [(n, n) for n in nomes]
+
+
+class JanelaTweaks(Gtk.ApplicationWindow):
+    def __init__(self, app, aba_inicial=None):
+        super().__init__(application=app, title="VoidBR Labwc Tweaks")
+        self.set_default_size(740, 680)
+
+        prov = Gtk.CssProvider()
+        prov.load_from_data(CSS.encode("utf-8"))
+        Gtk.StyleContext.add_provider_for_display(self.get_display(), prov,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self.css_fonte = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(self.get_display(), self.css_fonte,
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        try:
+            self.escala_fonte = min(ESCALA_MAX, max(ESCALA_MIN,
+                                                    float(ler_prefs_app().get("font_scale", 1.0))))
+        except (TypeError, ValueError):
+            self.escala_fonte = 1.0
+
+        # --- cabeçalho: fonte à esquerda, menu à direita ---
+        cab = Gtk.HeaderBar()
+        cab.add_css_class("cabecalho-app")
+        self.set_titlebar(cab)
+        fonte = Gtk.Box()
+        fonte.add_css_class("linked")
+        self.b_menor = Gtk.Button(label="A−", tooltip_text="Diminuir a fonte (Ctrl -)")
+        self.b_escala = Gtk.Button(label="100%", tooltip_text="Tamanho normal (Ctrl 0)")
+        self.b_maior = Gtk.Button(label="A+", tooltip_text="Aumentar a fonte (Ctrl +)")
+        for b, passo in ((self.b_menor, -1), (self.b_escala, 0), (self.b_maior, 1)):
+            b.add_css_class("botao-fonte")
+            b.connect("clicked", lambda _b, p=passo: self.mudar_fonte(p))
+            fonte.append(b)
+        cab.pack_start(fonte)
+
+        menu = Gio.Menu()
+        menu.append("📂 Abrir a pasta de configuração do labwc", "win.pasta")
+        menu.append("🗂️ Abrir os backups do app", "win.backups")
+        menu.append("ℹ️ Sobre / Créditos", "win.sobre")
+        bmenu = Gtk.MenuButton(icon_name="open-menu-symbolic")
+        bmenu.set_menu_model(menu)
+        cab.pack_end(bmenu)
+        for nome, cb in (("sobre", self.ao_clicar_sobre),
+                         ("pasta", lambda *_: self.abrir_pasta(os.path.dirname(RC))),
+                         ("backups", lambda *_: self.abrir_pasta(BACKUP_DIR)),
+                         ("fonte_mais", lambda *_: self.mudar_fonte(1)),
+                         ("fonte_menos", lambda *_: self.mudar_fonte(-1)),
+                         ("fonte_normal", lambda *_: self.mudar_fonte(0))):
+            acao = Gio.SimpleAction.new(nome, None)
+            acao.connect("activate", cb)
+            self.add_action(acao)
+        app.set_accels_for_action("win.fonte_mais", ["<Control>plus", "<Control>equal",
+                                                     "<Control>KP_Add"])
+        app.set_accels_for_action("win.fonte_menos", ["<Control>minus", "<Control>KP_Subtract"])
+        app.set_accels_for_action("win.fonte_normal", ["<Control>0", "<Control>KP_0"])
+        self.aplicar_fonte()
+
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        caixa.add_css_class("conteudo")
+        for lado in ("top", "bottom", "start", "end"):
+            getattr(caixa, f"set_margin_{lado}")(16)
+        self.set_child(caixa)
+
+        titulo = Gtk.Label(label="🛠️ VoidBR Labwc Tweaks", xalign=0)
+        titulo.add_css_class("titulo-app")
+        caixa.append(titulo)
+        sub = Gtk.Label(label="Janelas, barra em ilha, aparência, papel de parede, teclado e "
+                              "áreas de trabalho", xalign=0, wrap=True)
+        sub.add_css_class("subtitulo")
+        caixa.append(sub)
+
+        self.abas = Gtk.Notebook(scrollable=True)
+        self.abas.set_vexpand(True)
+        self.indice_aba = {}
+        for chave, rotulo, fabrica in (("janelas", "🪟 Janelas", self._aba_janelas),
+                                       ("barra", "🧱 Barra", self._aba_barra),
+                                       ("aparencia", "🎨 Aparência", self._aba_aparencia),
+                                       ("papel", "🖼️ Papel de parede", self._aba_papel),
+                                       ("teclado", "⌨️ Teclado e touchpad", self._aba_teclado),
+                                       ("areas", "🗂️ Áreas de trabalho", self._aba_areas)):
+            rolagem = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+            rolagem.set_child(fabrica())
+            self.indice_aba[chave] = self.abas.append_page(rolagem, Gtk.Label(label=rotulo))
+        caixa.append(self.abas)
+
+        st = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        st.add_css_class("caixa-status")
+        self.label_status = Gtk.Label(label="", xalign=0, wrap=True)
+        st.append(self.label_status)
+        caixa.append(st)
+
+        linha = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        b_labwc = Gtk.Button(label="🔵 Padrão labwc",
+                             tooltip_text="Volta o rc.xml ao original do labwc (atalhos e "
+                                          "janelas do próprio labwc, sem nada do VoidBR). "
+                                          "Teclado, barra e papel de parede continuam.")
+        b_labwc.add_css_class("botao-azul")
+        b_labwc.connect("clicked", lambda *_: self.confirmar_restaurar("labwc"))
+        b_voidbr = Gtk.Button(label="↩️ Padrão VoidBR",
+                              tooltip_text="Volta ao visual VoidBR completo: barra em ilha, "
+                                           "atalhos, tema e cores Tokyo Night.")
+        b_voidbr.add_css_class("botao-laranja")
+        b_voidbr.connect("clicked", lambda *_: self.confirmar_restaurar("voidbr"))
+        self.b_restaurar = (b_labwc, b_voidbr)
+        self.b_aplicar = Gtk.Button(label="✅ Aplicar")
+        self.b_aplicar.add_css_class("botao-verde")
+        self.b_aplicar.connect("clicked", self.ao_clicar_aplicar)
+        for b in (b_labwc, b_voidbr, self.b_aplicar):
+            linha.append(b)
+        caixa.append(linha)
+
+        self.recarregar()
+        if aba_inicial in self.indice_aba:
+            self.abas.set_current_page(self.indice_aba[aba_inicial])
+
+    # ----- blocos de interface -----
+
+    def _grade(self, titulo=None):
+        g = Gtk.Grid(column_spacing=14, row_spacing=10)
+        for lado in ("top", "bottom", "start", "end"):
+            getattr(g, f"set_margin_{lado}")(14)
+        g._linha = 0
+        if titulo:
+            self._secao(g, titulo)
+        return g
+
+    def _secao(self, g, texto):
+        s = Gtk.Label(label=texto, xalign=0)
+        s.add_css_class("secao")
+        g.attach(s, 0, g._linha, 3, 1)
+        g._linha += 1
+
+    def _rotulo(self, g, texto, dica=None):
+        r = Gtk.Label(label=texto, xalign=0, hexpand=True)
+        r.add_css_class("rotulo-campo")
+        g.attach(r, 0, g._linha, 1, 1)
+        if dica:
+            d = Gtk.Label(label=dica, xalign=0, wrap=True)
+            d.add_css_class("dica")
+            g.attach(d, 0, g._linha + 1, 3, 1)
+
+    def _avanca(self, g, dica):
+        g._linha += 2 if dica else 1
+
+    def _chave(self, g, texto, dica=None):
+        self._rotulo(g, texto, dica)
+        sw = Gtk.Switch(halign=Gtk.Align.END, valign=Gtk.Align.CENTER)
+        g.attach(sw, 1, g._linha, 2, 1)
+        self._avanca(g, dica)
+        return sw
+
+    def _lista(self, g, texto, opcoes, dica=None, busca=False):
+        self._rotulo(g, texto, dica)
+        dd = Gtk.DropDown.new_from_strings([r for _v, r in opcoes])
+        dd._opcoes = opcoes
+        if busca:
+            dd.set_expression(Gtk.PropertyExpression.new(Gtk.StringObject, None, "string"))
+            dd.set_enable_search(True)
+        g.attach(dd, 1, g._linha, 2, 1)
+        self._avanca(g, dica)
+        return dd
+
+    def _texto(self, g, texto, dica=None, exemplo=""):
+        self._rotulo(g, texto, dica)
+        e = Gtk.Entry(placeholder_text=exemplo, width_chars=18)
+        g.attach(e, 1, g._linha, 2, 1)
+        self._avanca(g, dica)
+        return e
+
+    def _escala(self, g, texto, minimo, maximo, passo=1, sufixo="", dica=None, casas=0):
+        self._rotulo(g, texto, dica)
+        esc = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, minimo, maximo, passo)
+        esc.set_size_request(220, -1)
+        esc.set_draw_value(False)
+        val = Gtk.Label(xalign=1, width_chars=7)
+        esc.connect("value-changed",
+                    lambda e: val.set_text(f"{e.get_value():.{casas}f}{sufixo}"))
+        g.attach(esc, 1, g._linha, 1, 1)
+        g.attach(val, 2, g._linha, 1, 1)
+        self._avanca(g, dica)
+        return esc
+
+    def _aviso(self, g, texto):
+        a = Gtk.Label(label=texto, xalign=0, wrap=True)
+        a.add_css_class("aviso")
+        g.attach(a, 0, g._linha, 3, 1)
+        g._linha += 1
+
+    @staticmethod
+    def _valor_dd(dd):
+        i = dd.get_selected()
+        return dd._opcoes[i][0] if 0 <= i < len(dd._opcoes) else None
+
+    # ----- abas -----
+
+    def _aba_janelas(self):
+        g = self._grade("Tema das janelas")
+        self.op_tema = temas_labwc()
+        self.w_tema = self._lista(g, "Tema", self.op_tema,
+                                  "Barra de título, bordas e menus do labwc. O padrão do VoidBR é "
+                                  "o VoidBR-Labwc (Tokyo Night).")
+        self.w_botoes = self._lista(g, "Botões da janela", BOTOES)
+        self.w_raio = self._escala(g, "Cantos arredondados", 0, 20, 1, " px")
+        self.w_sombras = self._chave(g, "Sombras", "Sombra embaixo das janelas flutuantes.")
+        self._secao(g, "Fonte do título e dos menus")
+        self.op_fonte = familias_fonte(g)
+        self.w_fonte_nome = self._lista(g, "Fonte", self.op_fonte, busca=True)
+        self.w_fonte_tam = self._escala(g, "Tamanho", 8, 16, 1, " pt")
+        self._secao(g, "Comportamento")
+        self.w_espaco = self._escala(g, "Espaço até as bordas", 0, 24, 1, " px",
+                                     "Distância entre a janela e a borda da tela ao encaixar ou "
+                                     "mover com o teclado.")
+        self.w_foco = self._chave(g, "Foco segue o mouse",
+                                  "A janela sob o mouse recebe o teclado, sem precisar clicar.")
+        return g
+
+    def _aba_barra(self):
+        g = self._grade("Estilo")
+        self.w_estilo = self._lista(g, "Estilo da barra", ESTILOS,
+                                    "Ilha VoidBR: flutua afastada da borda, com cantos "
+                                    "arredondados e fundo translúcido.")
+        self.w_opacidade = self._escala(g, "Opacidade do fundo", 30, 100, 1, "%",
+                                        "100% é o fundo sólido; menos deixa o papel de parede "
+                                        "aparecer.")
+        self._secao(g, "Posição e tamanho")
+        self.w_posicao = self._lista(g, "Posição na tela", POSICOES)
+        self.w_altura = self._escala(g, "Altura", 26, 56, 1, " px")
+        self._secao(g, "Módulos")
+        self.w_mod = {}
+        for nome, _secao, titulo, dica in MODULOS:
+            self.w_mod[nome] = self._chave(g, titulo, dica)
+        self._aviso(g, "O menu de aplicativos, as áreas de trabalho e o botão de energia ficam "
+                       "sempre na barra.")
+        return g
+
+    def _aba_aparencia(self):
+        g = self._grade("Tema dos aplicativos")
+        self.op_gtk = temas_gtk()
+        self.w_gtk = self._lista(g, "Tema GTK", self.op_gtk,
+                                 "Visual dos apps GTK (Thunar, Firefox, este app…). Vale também "
+                                 "para os apps X11 pelo xsettingsd.")
+        self.w_escuro = self._chave(g, "Preferir modo escuro",
+                                    "Apps que seguem o sistema (Loupe, Firefox…) abrem no "
+                                    "escuro.")
+        self.op_icones = temas_icones()
+        self.w_icones = self._lista(g, "Ícones", self.op_icones,
+                                    "Também usados na barra de título e no menu do labwc.")
+        self._secao(g, "Cursor")
+        self.op_cursor = temas_cursor()
+        self.w_cursor = self._lista(g, "Tema do cursor", self.op_cursor)
+        self.w_cursor_tam = self._escala(g, "Tamanho do cursor", 16, 64, 8, " px",
+                                         "Nos apps já abertos o cursor muda no próximo login.")
+        self._secao(g, "Fonte da interface")
+        self.op_fonte_ui = familias_fonte(g)
+        self.w_fonte_ui = self._lista(g, "Fonte", self.op_fonte_ui, busca=True)
+        self.w_fonte_ui_tam = self._escala(g, "Tamanho", 8, 16, 1, " pt")
+        return g
+
+    def _aba_papel(self):
+        g = self._grade("Papel de parede")
+        self.op_papel = papeis()
+        self.w_papel = self._lista(g, "Imagem", self.op_papel,
+                                   f"Imagens de {PAPEL_PASTA} (voidbr-wallpapers).", busca=True)
+        botao = Gtk.Button(label="📂 Escolher outra imagem…", halign=Gtk.Align.START)
+        botao.connect("clicked", self.ao_escolher_imagem)
+        g.attach(botao, 0, g._linha, 3, 1)
+        g._linha += 1
+        self.w_papel_modo = self._lista(g, "Ajuste na tela", PAPEL_MODOS,
+                                        "Como a imagem ocupa a tela quando o tamanho não bate.")
+        self._aviso(g, "Vale para todas as áreas de trabalho e todos os monitores.")
+        return g
+
+    def _aba_teclado(self):
+        g = self._grade("Teclado")
+        self.w_layouts = self._texto(g, "Layouts", "Separados por vírgula, na ordem da troca. "
+                                     "\"br\" já é o ABNT2. Ex.: br,us", "br,us")
+        self.w_variante = self._texto(g, "Variantes (opcional)",
+                                      "Uma por layout, na mesma ordem. Ex.: ,intl deixa o us "
+                                      "internacional (com acentos).", ",intl")
+        self.w_modelo = self._lista(g, "Modelo", MODELOS,
+                                    "ABNT2 acerta a tecla /? e o ponto do teclado numérico.")
+        self.w_alternar = self._lista(g, "Trocar de layout com", ALTERNAR)
+        self.w_numlock = self._chave(g, "Num Lock ligado ao entrar")
+        self.w_repeticao = self._escala(g, "Velocidade de repetição", 10, 60, 1, "/s",
+                                        "Quantas vezes por segundo a tecla segurada se repete.")
+        self.w_atraso = self._escala(g, "Espera antes de repetir", 150, 1000, 50, " ms")
+        self._secao(g, "Touchpad")
+        self.w_toque = self._chave(g, "Toque para clicar")
+        self.w_natural = self._chave(g, "Rolagem natural",
+                                     "O conteúdo acompanha os dedos, como no celular.")
+        self.w_digitando = self._chave(g, "Desligar enquanto digita",
+                                       "Evita clique sem querer com a palma da mão.")
+        self.w_velocidade = self._escala(g, "Velocidade do ponteiro", -1.0, 1.0, 0.1, "",
+                                         "0 é o padrão.", casas=1)
+        return g
+
+    def _aba_areas(self):
+        g = self._grade("Áreas de trabalho")
+        self.w_areas_num = self._escala(g, "Quantidade", 1, 10, 1, "",
+                                        "Super+1…9 vai para a área; Super+Shift+1…9 leva a "
+                                        "janela junto. Os atalhos acompanham a quantidade.")
+        self.w_areas_nomes = self._texto(g, "Nomes", "Separados por vírgula, na ordem. O que "
+                                         "faltar recebe o número. Aparecem na barra.",
+                                         "1, 2, 3, 4")
+        self.w_areas_aviso = self._chave(g, "Mostrar o nome ao trocar",
+                                         "Aviso rápido no meio da tela com a área atual.")
+        self._aviso(g, "Também troca com Ctrl+Alt+← / → ou rolando o mouse na área de trabalho.")
+        return g
+
+    # ----- valores <-> interface -----
+
+    def mostrar(self, v):
+        _escolha(self.w_tema, self.op_tema, v["tema"])
+        _escolha(self.w_botoes, BOTOES, v["botoes"])
+        self.w_raio.set_value(v["raio"])
+        self.w_sombras.set_active(v["sombras"])
+        _escolha(self.w_fonte_nome, self.op_fonte, v["fonte_nome"])
+        self.w_fonte_tam.set_value(v["fonte_tam"])
+        self.w_espaco.set_value(v["espaco"])
+        self.w_foco.set_active(v["foco_mouse"])
+
+        _escolha(self.w_estilo, ESTILOS, v["estilo"])
+        self.w_opacidade.set_value(v["opacidade"])
+        _escolha(self.w_posicao, POSICOES, v["posicao"])
+        self.w_altura.set_value(v["altura"])
+        for m, sw in self.w_mod.items():
+            sw.set_active(v["modulos"].get(m, False))
+
+        _escolha(self.w_gtk, self.op_gtk, v["gtk"])
+        self.w_escuro.set_active(v["escuro"])
+        _escolha(self.w_icones, self.op_icones, v["icones"])
+        _escolha(self.w_cursor, self.op_cursor, v["cursor"])
+        self.w_cursor_tam.set_value(v["cursor_tam"])
+        _escolha(self.w_fonte_ui, self.op_fonte_ui, v["fonte_ui"])
+        self.w_fonte_ui_tam.set_value(v["fonte_ui_tam"])
+
+        _escolha(self.w_papel, self.op_papel, v["papel"])
+        _escolha(self.w_papel_modo, PAPEL_MODOS, v["papel_modo"])
+
+        self.w_layouts.set_text(v["layouts"])
+        self.w_variante.set_text(v["variante"])
+        _escolha(self.w_modelo, MODELOS, v["modelo"])
+        _escolha(self.w_alternar, ALTERNAR, v["alternar"])
+        self.w_numlock.set_active(v["numlock"])
+        self.w_repeticao.set_value(v["repeticao"])
+        self.w_atraso.set_value(v["atraso"])
+        self.w_toque.set_active(v["toque"])
+        self.w_natural.set_active(v["natural"])
+        self.w_digitando.set_active(v["digitando"])
+        self.w_velocidade.set_value(v["velocidade"])
+
+        self.w_areas_num.set_value(v["areas_num"])
+        self.w_areas_nomes.set_text(v["areas_nomes"])
+        self.w_areas_aviso.set_active(v["areas_aviso"])
+
+    def coletar(self):
+        a = self.antes
+        v = {
+            "tema": self._valor_dd(self.w_tema) or a["tema"],
+            "botoes": self._valor_dd(self.w_botoes),
+            "raio": int(self.w_raio.get_value()),
+            "sombras": self.w_sombras.get_active(),
+            "fonte_nome": self._valor_dd(self.w_fonte_nome) or a["fonte_nome"],
+            "fonte_tam": int(self.w_fonte_tam.get_value()),
+            "espaco": int(self.w_espaco.get_value()),
+            "foco_mouse": self.w_foco.get_active(),
+            "estilo": self._valor_dd(self.w_estilo),
+            "opacidade": int(self.w_opacidade.get_value()),
+            "posicao": self._valor_dd(self.w_posicao),
+            "altura": int(self.w_altura.get_value()),
+            "modulos": {m: sw.get_active() for m, sw in self.w_mod.items()},
+            "gtk": self._valor_dd(self.w_gtk) or a["gtk"],
+            "escuro": self.w_escuro.get_active(),
+            "icones": self._valor_dd(self.w_icones) or a["icones"],
+            "cursor": self._valor_dd(self.w_cursor) or a["cursor"],
+            "cursor_tam": int(self.w_cursor_tam.get_value()),
+            "fonte_ui": self._valor_dd(self.w_fonte_ui) or a["fonte_ui"],
+            "fonte_ui_tam": int(self.w_fonte_ui_tam.get_value()),
+            "papel": self._valor_dd(self.w_papel) or a["papel"],
+            "papel_modo": self._valor_dd(self.w_papel_modo),
+            "layouts": self.w_layouts.get_text().strip(),
+            "variante": self.w_variante.get_text().strip(),
+            "modelo": self._valor_dd(self.w_modelo),
+            "alternar": self._valor_dd(self.w_alternar),
+            "numlock": self.w_numlock.get_active(),
+            "repeticao": int(self.w_repeticao.get_value()),
+            "atraso": int(self.w_atraso.get_value()),
+            "toque": self.w_toque.get_active(),
+            "natural": self.w_natural.get_active(),
+            "digitando": self.w_digitando.get_active(),
+            "velocidade": round(self.w_velocidade.get_value(), 1),
+            "areas_num": int(self.w_areas_num.get_value()),
+            "areas_nomes": self.w_areas_nomes.get_text().strip(),
+            "areas_aviso": self.w_areas_aviso.get_active(),
+            "_xkb_opcoes": a.get("_xkb_opcoes", []),
+        }
+        return v
+
+    def recarregar(self):
+        self.antes = valores_atuais()
+        self.mostrar(self.antes)
+        self.antes = self.coletar()  # o que a tela mostra é a referência do "mudou"
+        self.status("✔ Configuração atual carregada." +
+                    ("" if labwc_rodando() else " — o labwc não está rodando: as mudanças "
+                                                "valem no próximo login."))
+
+    def status(self, texto):
+        self.label_status.set_text(texto)
+        return False
+
+    # ----- botões -----
+
+    def _botoes(self, ligados):
+        for b in (self.b_aplicar, *self.b_restaurar):
+            b.set_sensitive(ligados)
+
+    def ao_clicar_aplicar(self, *_):
+        v = self.coletar()
+        self._botoes(False)
+
+        def tarefa():
+            try:
+                feito = aplicar(v, self.antes, lambda t: GLib.idle_add(self.status, t))
+                GLib.idle_add(self._fim, feito, v, None)
+            except Exception as erro:  # noqa: BLE001 - mostra qualquer falha ao usuário
+                GLib.idle_add(self._fim, [], v, str(erro))
+        threading.Thread(target=tarefa, daemon=True).start()
+
+    def _fim(self, feito, v, erro):
+        self._botoes(True)
+        if erro:
+            self.status(f"⚠️ {erro}")
+        elif not feito:
+            self.status("ℹ️ Nada mudou.")
+        else:
+            self.antes = copy.deepcopy(v)
+            self.status("✅ Aplicado: " + ", ".join(feito) + ". As janelas continuam abertas.")
+        return False
+
+    def confirmar_restaurar(self, base):
+        if base == "voidbr":
+            msg = "Restaurar o padrão VoidBR?"
+            det = ("Atalhos, janelas, teclado, barra, tema, cursor, fonte e papel de parede "
+                   "voltam ao padrão do VoidBR.")
+        else:
+            msg = "Restaurar o padrão do labwc?"
+            det = ("O rc.xml volta ao original do labwc: atalhos, tema e menus do próprio "
+                   "labwc, sem os do VoidBR. Teclado, barra e papel de parede continuam.")
+        det += f"\n\nA configuração atual fica guardada em {BACKUP_DIR}."
+        dlg = Gtk.AlertDialog(message=msg, detail=det, buttons=["Cancelar", "Restaurar"],
+                              cancel_button=0, default_button=1)
+        dlg.choose(self, None, self._resposta_restaurar, base)
+
+    def _resposta_restaurar(self, dlg, res, base):
+        try:
+            if dlg.choose_finish(res) != 1:
+                return
+        except GLib.Error:
+            return
+        self._botoes(False)
+
+        def tarefa():
+            try:
+                destino = restaurar(base, lambda t: GLib.idle_add(self.status, t))
+                GLib.idle_add(self._fim_restaurar, base, destino, None)
+            except Exception as erro:  # noqa: BLE001 - mostra qualquer falha ao usuário
+                GLib.idle_add(self._fim_restaurar, base, None, str(erro))
+        threading.Thread(target=tarefa, daemon=True).start()
+
+    def _fim_restaurar(self, base, destino, erro):
+        self._botoes(True)
+        if erro:
+            self.status(f"⚠️ {erro}")
+            return False
+        self.recarregar()
+        nome = "VoidBR" if base == "voidbr" else "labwc"
+        self.status(f"✅ Padrão {nome} restaurado. Backup em {destino}.")
+        return False
+
+    def ao_escolher_imagem(self, *_):
+        dlg = Gtk.FileDialog(title="Imagem do papel de parede", modal=True)
+        filtro = Gtk.FileFilter()
+        filtro.set_name("Imagens")
+        for ext in PAPEL_EXT:
+            filtro.add_pattern("*" + ext)
+            filtro.add_pattern("*" + ext.upper())
+        filtros = Gio.ListStore.new(Gtk.FileFilter)
+        filtros.append(filtro)
+        dlg.set_filters(filtros)
+        pasta = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or PAPEL_PASTA
+        if os.path.isdir(pasta):
+            dlg.set_initial_folder(Gio.File.new_for_path(pasta))
+
+        def fim(d, res):
+            try:
+                arq = d.open_finish(res)
+            except GLib.Error:
+                return
+            caminho = arq.get_path()
+            if caminho:
+                _escolha(self.w_papel, self.op_papel, caminho)
+        dlg.open(self, None, fim)
+
+    def abrir_pasta(self, pasta):
+        os.makedirs(pasta, exist_ok=True)
+        try:
+            em_segundo_plano(["xdg-open", pasta])
+        except OSError:
+            self.status(f"ℹ️ {pasta}")
+
+    # ----- fonte do app -----
+
+    def aplicar_fonte(self):
+        nome = Gtk.Settings.get_default().props.gtk_font_name or ""
+        m = re.search(r"(\d+(?:\.\d+)?)\s*$", nome)
+        base = float(m.group(1)) if m else 11.0
+        s = self.escala_fonte
+        self.css_fonte.load_from_data((
+            f"window, window * {{ font-size: {base * s:.1f}pt; }}\n"
+            f".titulo-app {{ font-size: {20 * s:.0f}px; }}\n"
+            f".subtitulo {{ font-size: {12 * s:.0f}px; }}\n"
+            f".dica {{ font-size: {11 * s:.0f}px; }}\n").encode("utf-8"))
+        for w in Gtk.Window.list_toplevels():
+            w.queue_resize()
+        self.b_escala.set_label(f"{round(s * 100)}%")
+        self.b_menor.set_sensitive(s > ESCALA_MIN + 0.001)
+        self.b_maior.set_sensitive(s < ESCALA_MAX - 0.001)
+
+    def mudar_fonte(self, passo):
+        nova = 1.0 if passo == 0 else round(self.escala_fonte + 0.1 * passo, 2)
+        nova = min(ESCALA_MAX, max(ESCALA_MIN, nova))
+        if nova == self.escala_fonte and passo:
+            return
+        self.escala_fonte = nova
+        self.aplicar_fonte()
+        try:
+            gravar_prefs_app(font_scale=nova)
+        except OSError:
+            pass
+
+    def ao_clicar_sobre(self, *_):
+        sobre = Gtk.AboutDialog(transient_for=self, modal=True)
+        sobre.set_program_name("VoidBR Labwc Tweaks")
+        sobre.set_version(VERSAO)
+        sobre.set_comments("Ajustes do labwc do VoidBR:\njanelas, barra em ilha, aparência,\n"
+                           "papel de parede, teclado e áreas de trabalho.")
+        sobre.set_authors(["Vilmar Catafesta <vcatafesta@gmail.com>"])
+        sobre.set_copyright("© 2026 Vilmar Catafesta")
+        sobre.set_website("https://voidbr.org")
+        sobre.set_website_label("voidbr.org")
+        sobre.set_license_type(Gtk.License.BSD)
+        sobre.set_logo_icon_name("org.voidbr.LabwcTweaks")
+        sobre.present()
+
+
+class AppTweaks(Gtk.Application):
+    def __init__(self, aba=None):
+        super().__init__(application_id=APP_ID,
+                         flags=getattr(Gio.ApplicationFlags, "DEFAULT_FLAGS",
+                                       Gio.ApplicationFlags.FLAGS_NONE))
+        self.aba = aba
+
+    def do_activate(self):
+        janela = self.props.active_window or JanelaTweaks(self, self.aba)
+        janela.present()
+
+
+def main():
+    args = sys.argv[1:]
+    if "--version" in args:
+        print(f"voidbr-labwc-tweaks {VERSAO}")
+        return 0
+    if "--help" in args or "-h" in args:
+        print("Uso: voidbr-labwc-tweaks [--aba janelas|barra|aparencia|papel|teclado|areas]\n"
+              "                           [--padrao-voidbr | --padrao-labwc]")
+        return 0
+    if "--padrao-voidbr" in args or "--padrao-labwc" in args:
+        destino = restaurar("voidbr" if "--padrao-voidbr" in args else "labwc", print)
+        print(f"Padrão restaurado. Backup em {destino}")
+        return 0
+    aba = None
+    if "--aba" in args:
+        i = args.index("--aba")
+        aba = args[i + 1] if i + 1 < len(args) else None
+    return AppTweaks(aba).run([sys.argv[0]])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=VoidBR Labwc Tweaks
+Name[pt_BR]=VoidBR Labwc Tweaks
+Comment=Janelas, barra em ilha, aparência, papel de parede, teclado e áreas de trabalho do labwc
+Comment[pt_BR]=Janelas, barra em ilha, aparência, papel de parede, teclado e áreas de trabalho do labwc
+Exec=voidbr-labwc-tweaks
+Icon=org.voidbr.LabwcTweaks
+Terminal=false
+Categories=Settings;DesktopSettings;GTK;
+Keywords=labwc;waybar;tema;papel;parede;teclado;touchpad;janelas;tweaks;
+OnlyShowIn=labwc;
+StartupNotify=true
