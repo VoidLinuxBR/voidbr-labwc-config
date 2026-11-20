@@ -1,0 +1,101 @@
+/* VoidBR Labwc - rofi Tokyo Night */
+configuration {
+    modi: "drun,run,window";
+    show-icons: true;
+    icon-theme: "Tokyonight-Dark-Icons";
+    font: "Noto Sans 11";
+    terminal: "foot";
+    drun-display-format: "{name}";
+    display-drun: "  Aplicativos";
+    display-run: "  Executar";
+    display-window: "  Janelas";
+    disable-history: false;
+}
+
+* {
+    bg:        #1a1b26e6;
+    bg-alt:    #24283b;
+    fg:        #c0caf5;
+    fg-dim:    #565f89;
+    accent:    #7aa2f7;
+    urgent:    #f7768e;
+
+    background-color: transparent;
+    text-color:       @fg;
+}
+
+window {
+    width:            560px;
+    background-color: @bg;
+    border:           1px;
+    border-color:     @accent;
+    border-radius:    12px;
+    padding:          14px;
+}
+
+mainbox {
+    spacing: 10px;
+}
+
+inputbar {
+    children:         [ prompt, entry ];
+    background-color: @bg-alt;
+    border-radius:    8px;
+    padding:          8px 12px;
+    spacing:          10px;
+}
+
+prompt {
+    text-color: @accent;
+}
+
+entry {
+    placeholder:       "Buscar...";
+    placeholder-color: @fg-dim;
+}
+
+listview {
+    lines:   8;
+    columns: 1;
+    spacing: 4px;
+    scrollbar: false;
+}
+
+element {
+    padding:       7px 10px;
+    border-radius: 8px;
+    spacing:       10px;
+}
+
+element selected.normal {
+    background-color: @accent;
+    text-color:       #1a1b26;
+}
+
+element urgent.normal {
+    text-color: @urgent;
+}
+
+element-icon {
+    size: 22px;
+}
+
+element-text {
+    text-color:     inherit;
+    vertical-align: 0.5;
+}
+
+mode-switcher {
+    spacing: 6px;
+}
+
+button {
+    padding:       6px;
+    border-radius: 8px;
+    text-color:    @fg-dim;
+}
+
+button selected {
+    background-color: @bg-alt;
+    text-color:       @accent;
+}

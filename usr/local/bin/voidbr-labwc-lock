@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# ====================================================================
+# VoidBR Labwc - Bloqueio de tela (swaylock, Tokyo Night)
+# Created: qui 19 nov 2026 23:53:31 -04
+# Updated: qui 19 nov 2026 23:53:31 -04
+# Version: 1.0.0
+# ====================================================================
+pidof swaylock hyprlock >/dev/null && exit 0
+
+if ! command -v swaylock >/dev/null; then
+    notify-send "Bloqueio de tela" "Instale o swaylock: sudo xbps-install swaylock"
+    exit 1
+fi
+
+exec swaylock -f -F \
+    --color 1a1b26 \
+    --indicator-radius 90 \
+    --indicator-thickness 8 \
+    --inside-color 1a1b26cc \
+    --inside-clear-color 1a1b26cc \
+    --inside-ver-color 1a1b26cc \
+    --inside-wrong-color 1a1b26cc \
+    --ring-color 7aa2f7 \
+    --ring-clear-color e0af68 \
+    --ring-ver-color 9ece6a \
+    --ring-wrong-color f7768e \
+    --key-hl-color bb9af7 \
+    --bs-hl-color f7768e \
+    --line-color 00000000 \
+    --separator-color 00000000 \
+    --text-color c0caf5 \
+    --text-clear-color e0af68 \
+    --text-ver-color 9ece6a \
+    --text-wrong-color f7768e \
+    --font "Noto Sans"

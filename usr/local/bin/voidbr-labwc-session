@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# ====================================================================
+# VoidBR Labwc - Serviços da sessão (chamado pelo ~/.config/labwc/autostart)
+# Created: qui 19 nov 2026 23:53:31 -04
+# Updated: qui 19 nov 2026 23:53:31 -04
+# Version: 1.0.0
+# ====================================================================
+WALL="$HOME/.local/share/backgrounds/current"
+FIRST="$HOME/.config/voidbr/labwc-first-login"
+
+# Primeiro login: aplica tema GTK, ícones, cursor e fonte no gsettings
+# (apps GTK em Wayland leem daqui, não do settings.ini). Depois disso
+# quem manda é o nwg-look.
+if [ ! -e "$FIRST" ] && command -v gsettings >/dev/null; then
+    gsettings set org.gnome.desktop.interface gtk-theme 'Tokyonight-Dark-Theme'
+    gsettings set org.gnome.desktop.interface icon-theme 'Tokyonight-Dark-Icons'
+    gsettings set org.gnome.desktop.interface cursor-theme 'Nordic-cursors'
+    gsettings set org.gnome.desktop.interface cursor-size 24
+    gsettings set org.gnome.desktop.interface font-name 'Noto Sans 10'
+    gsettings set org.gnome.desktop.interface monospace-font-name 'DejaVu Sans Mono 11'
+    gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+    mkdir -p "$(dirname "$FIRST")" && touch "$FIRST"
+fi
+
+# Sem wallpaper escolhido ainda: usa o padrão do VoidBR
+if [ ! -e "$WALL" ]; then
+    for img in /usr/share/backgrounds/voidbr/voidbr-wallpaper.avif /usr/share/wallpapers/tokyonight1.avif; do
+        if [ -f "$img" ]; then
+            mkdir -p "$(dirname "$WALL")"
+            ln -sf "$img" "$WALL"
+            break
+        fi
+    done
+fi
+
+# Áudio: o pipewire sobe aqui. Quando o pipewire.conf.d tem o wireplumber
+# e o pipewire-pulse, o próprio pipewire os inicia; senão, sobem aqui.
+pw_conf_d() {
+    for f in /etc/pipewire/pipewire.conf.d/*"$1"* /usr/share/pipewire/pipewire.conf.d/*"$1"* \
+        "$HOME"/.config/pipewire/pipewire.conf.d/*"$1"*; do
+        [ -e "$f" ] && return 0
+    done
+    return 1
+}
+pgrep -u "$USER" -x pipewire >/dev/null || pipewire &
+for _ in $(seq 20); do [ -S "$XDG_RUNTIME_DIR/pipewire-0" ] && break; sleep 0.1; done
+for svc in wireplumber pipewire-pulse; do
+    pw_conf_d "$svc" || pgrep -u "$USER" -x "$svc" >/dev/null || "$svc" &
+done
+
+# Chaveiro de senhas: o PAM do login (SDDM) já o abriu com a senha do
+# usuário; aqui ele se liga a esta sessão D-Bus (dbus-run-session)
+command -v gnome-keyring-daemon >/dev/null &&
+    gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1
+
+# Tema, cursor e fonte para apps X11 (~/.config/xsettingsd/xsettingsd.conf)
+command -v xsettingsd >/dev/null && xsettingsd >/dev/null 2>&1 &
+
+# Agente polkit (senha de administrador para apps gráficos)
+if command -v lxqt-policykit-agent >/dev/null; then
+    lxqt-policykit-agent &
+elif [ -x /usr/libexec/xfce-polkit ]; then
+    /usr/libexec/xfce-polkit &
+fi
+
+# Papel de parede
+command -v swaybg >/dev/null && swaybg -i "$WALL" -m fill &
+
+# Notificações e barra
+command -v mako >/dev/null && mako &
+command -v waybar >/dev/null && waybar &
+
+# Histórico da área de transferência (Super+V)
+command -v cliphist >/dev/null && wl-paste --watch cliphist store &
+
+# Inatividade: 5 min apaga a tela | 10 min bloqueia | bloqueia antes de suspender
+if command -v swayidle >/dev/null; then
+    swayidle -w \
+        timeout 300 'wlopm --off "*"' resume 'wlopm --on "*"' \
+        timeout 600 '/usr/local/bin/voidbr-labwc-lock' \
+        before-sleep '/usr/local/bin/voidbr-labwc-lock' &
+fi
+
+# Montagem automática de pendrives com ícone na bandeja
+command -v udiskie >/dev/null && udiskie --tray &
+
+# Bluetooth e rede na bandeja
+# (o blueman só sobe se houver adaptador Bluetooth: sem ele ocupa ~35 MB à toa)
+if command -v blueman-applet >/dev/null && ls /sys/class/bluetooth/hci* >/dev/null 2>&1; then
+    blueman-applet &
+fi
+command -v nm-applet >/dev/null && nm-applet --indicator &
+
+# Autostart XDG (~/.config/autostart e /etc/xdg/autostart), se houver o dex
+command -v dex >/dev/null && dex -a -e labwc &
+
+wait

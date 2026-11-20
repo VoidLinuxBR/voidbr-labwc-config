@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# ====================================================================
+# VoidBR Labwc - Menu de energia (rofi)
+# Created: qui 19 nov 2026 23:53:31 -04
+# Updated: qui 19 nov 2026 23:53:31 -04
+# Version: 1.0.0
+# ====================================================================
+pkill -x rofi && exit 0
+
+OPCOES="󰌾  Bloquear
+󰍃  Sair da sessão
+󰤄  Suspender
+󰜉  Reiniciar
+󰐥  Desligar"
+
+ESCOLHA=$(printf '%s\n' "$OPCOES" | rofi -dmenu -i -p "Energia" -theme-str 'window {width: 300px;} listview {lines: 5;}')
+
+case "$ESCOLHA" in
+    *Bloquear*)  /usr/local/bin/voidbr-labwc-lock ;;
+    *Sair*)      labwc --exit ;;
+    *Suspender*) loginctl suspend ;;
+    *Reiniciar*) loginctl reboot ;;
+    *Desligar*)  loginctl poweroff ;;
+esac

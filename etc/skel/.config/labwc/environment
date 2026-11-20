@@ -1,0 +1,21 @@
+## VoidBR Labwc - variáveis de ambiente da sessão
+## Lido pelo próprio labwc (não é um script de shell: só VAR=valor).
+## Depois de editar: labwc -r (ou Super+Shift+R)
+
+## Teclado: "br" já é o ABNT2; o modelo abnt2 acerta /? e o ponto do
+## teclado numérico. Alt+Shift alterna entre br e us.
+XKB_DEFAULT_MODEL=abnt2
+XKB_DEFAULT_LAYOUT=br,us
+XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle
+
+## Cursor (Nordic-cursors do voidbr-tokyo-theme)
+XCURSOR_THEME=Nordic-cursors
+XCURSOR_SIZE=24
+
+## Aplicativos em Wayland nativo
+MOZ_ENABLE_WAYLAND=1
+QT_QPA_PLATFORM=wayland;xcb
+QT_WAYLAND_DISABLE_WINDOWDECORATION=1
+SDL_VIDEODRIVER=wayland,x11
+_JAVA_AWT_WM_NONREPARENTING=1
+ELECTRON_OZONE_PLATFORM_HINT=auto
