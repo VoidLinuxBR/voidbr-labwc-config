@@ -21,7 +21,31 @@ Waybar, rofi, mako, foot e visual Tokyo Night. Usada pelo meta-pacote
 | `etc/skel/.config/xdg-desktop-portal/labwc-portals.conf` | Portais gtk + wlr (captura de tela) |
 | `usr/share/themes/VoidBR-Labwc/labwc/themerc` | Tema das janelas e menus do labwc |
 | `usr/share/wayland-sessions/voidbr-labwc.desktop` | Sessão "VoidBR Labwc" no SDDM (dentro do `dbus-run-session`) |
+| `usr/bin/voidbr-labwc-tweaks` | App de ajustes (abaixo) |
 | `usr/local/bin/voidbr-labwc-*` | Scripts da sessão (abaixo) |
+
+## VoidBR Labwc Tweaks
+
+`voidbr-labwc-tweaks` (GTK4) ajusta tudo sem abrir arquivo de configuração.
+Fica no menu de aplicativos e no clique direito → Configurações.
+
+| Aba | O que muda |
+|---|---|
+| 🪟 Janelas | Tema do labwc, botões (direita / esquerda estilo Mac), cantos, sombras, fonte, espaço até as bordas, foco segue o mouse |
+| 🧱 Barra | Waybar em ilha ou inteira, opacidade, em cima / embaixo, altura e módulos |
+| 🎨 Aparência | Tema GTK, modo escuro, ícones, cursor e fonte (gsettings + xsettingsd) |
+| 🖼️ Papel de parede | Imagens do voidbr-wallpapers ou própria, e o ajuste na tela |
+| ⌨️ Teclado e touchpad | Layouts, variantes, modelo ABNT2, troca de layout, Num Lock, repetição, toque, rolagem natural, velocidade |
+| 🗂️ Áreas de trabalho | Quantidade, nomes e aviso ao trocar (os atalhos Super+N acompanham) |
+
+Aplica com `labwc --reconfigure` (as janelas continuam abertas) e recarrega a
+Waybar. **Padrão VoidBR** e **Padrão labwc** guardam antes a configuração atual
+em `~/.config/voidbr/labwc-tweaks-backup/`.
+
+```sh
+voidbr-labwc-tweaks --aba barra      # abre direto numa aba
+voidbr-labwc-tweaks --padrao-voidbr  # restaura pelo terminal
+```
 
 ## Scripts
 

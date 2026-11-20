@@ -2,8 +2,8 @@
 # ====================================================================
 # VoidBR Labwc - Serviços da sessão (chamado pelo ~/.config/labwc/autostart)
 # Created: qui 19 nov 2026 23:53:31 -04
-# Updated: qui 19 nov 2026 23:53:31 -04
-# Version: 1.0.0
+# Updated: sex 20 nov 2026 00:58:00 -04
+# Version: 1.0.1
 # ====================================================================
 WALL="$HOME/.local/share/backgrounds/current"
 FIRST="$HOME/.config/voidbr/labwc-first-login"
@@ -63,8 +63,9 @@ elif [ -x /usr/libexec/xfce-polkit ]; then
     /usr/libexec/xfce-polkit &
 fi
 
-# Papel de parede
-command -v swaybg >/dev/null && swaybg -i "$WALL" -m fill &
+# Papel de parede (o ajuste na tela vem do voidbr-labwc-tweaks; padrão: fill)
+MODO=$(sed -n 's/.*"papel_modo": *"\([a-z]*\)".*/\1/p' "$HOME/.config/voidbr/labwc-tweaks.json" 2>/dev/null)
+command -v swaybg >/dev/null && swaybg -i "$WALL" -m "${MODO:-fill}" &
 
 # Notificações e barra
 command -v mako >/dev/null && mako &

@@ -5,7 +5,7 @@
   "layer": "top",
   "position": "top",
   "height": 34,
-  "margin": "4 8 0 8",
+  "margin": "6 10 0 10",
   "spacing": 4,
 
   "modules-left": ["custom/menu", "ext/workspaces", "wlr/taskbar"],
