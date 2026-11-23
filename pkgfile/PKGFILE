@@ -18,9 +18,7 @@ depends=(
 	voidbr-sddm-themes # tema "voidbr" do SDDM
 	'labwc>=0.8.3'     # ext-workspace (áreas de trabalho no Waybar)
 )
-backup=(
-	/etc/sddm.conf.d/wayland.conf
-)
+backup=()
 
 # Automatically detect and use the correct install file
 if [ -e "${pkgname}.install" ]; then
@@ -67,18 +65,9 @@ post_install() {
 		log "Finalizando instalação"
 	fi
 
-	# SDDM em modo Wayland (weston)
-	mkdir -p /etc/sddm.conf.d/
-	tee /etc/sddm.conf.d/wayland.conf >/dev/null <<'EOF'
-[General]
-#CompositorCommand=weston --shell=kiosk
-DisplayServer=wayland
-EOF
-
-	# Tema do SDDM: só define se nenhuma outra edição VoidBR já escolheu um
-	if ! ls /etc/sddm.conf.d/10-voidbr-*.conf >/dev/null 2>&1; then
-		printf '[Theme]\nCurrent=voidbr\n' >/etc/sddm.conf.d/10-voidbr-labwc.conf
-	fi
+	# O /etc/sddm.conf.d/wayland.conf (greeter do SDDM em Wayland, compositor
+	# sway) é do voidbr-sddm-themes; este pacote não mexe mais nele.
+	# O tema do SDDM é o padrão do voidbr-sddm-themes (/etc/sddm.conf).
 
 	# Build da ISO e instalador: o skel vai para o usuário criado depois
 	if [ -n "${MKISO_BUILD:-}" ] || [ -n "${VOIDBR_INSTALLER:-}" ]; then
