@@ -3,7 +3,7 @@
 #
 #   voidbr-labwc-tweaks
 #   Created: sex 20 nov 2026 00:45:00 -04
-#   Updated: seg 23 nov 2026 02:07:59 -04
+#   Updated: seg 23 nov 2026 02:24:50 -04
 #
 #   Copyright (c) 2026, Vilmar Catafesta <vcatafesta@gmail.com>
 #   Copyright (c) 2026, VoidLinuxBR Team
@@ -23,6 +23,10 @@
 #     tinha um botão próprio no fim da página e o Aplicar dizia "Nada mudou").
 #   - v1.3 (2026-11-23): Tela de login aparece também com o voidbr-sddm-themes antigo (com o botão
 #     próprio da aba); antes um parâmetro novo derrubava a aba sem aviso.
+#   - v1.4 (2026-11-23): Aparência: "Escala da interface" (80% a 200%, de 10 em 10),
+#     como no voidbr-enlightenment-tweaks. Aplica na hora em todos os monitores
+#     (wlr-randr --scale), guarda em labwc-tweaks.json e o voidbr-labwc-session
+#     reaplica no login. Padrão VoidBR volta a 100%; Padrão labwc mantém.
 #
 #   Redistribution and use in source and binary forms, with or without
 #   modification, are permitted provided that the following conditions
@@ -66,7 +70,7 @@ O que o app altera (sempre no usuário atual):
     ~/.config/waybar/style.css            bloco "voidbr-labwc-tweaks" (ilha)
     ~/.config/xsettingsd/xsettingsd.conf  tema para apps X11
     ~/.local/share/backgrounds/current    papel de parede (link)
-    ~/.config/voidbr/labwc-tweaks.json    fonte do app e modo do papel
+    ~/.config/voidbr/labwc-tweaks.json    fonte do app, modo do papel e escala da tela
 """
 
 import gi
@@ -86,7 +90,7 @@ import xml.etree.ElementTree as ET
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib, Gio
 
-VERSAO = "1.3"
+VERSAO = "1.4"
 APP_ID = "org.voidbr.LabwcTweaks"
 
 HOME = os.path.expanduser("~")
@@ -104,6 +108,7 @@ BACKUP_DIR = os.path.join(CONFIG, "voidbr", "labwc-tweaks-backup")
 PAPEL_LINK = os.path.join(DADOS, "backgrounds", "current")
 RC_LABWC = "/usr/share/doc/labwc/rc.xml"
 ESCALA_MIN, ESCALA_MAX = 0.7, 2.0
+TELA_MIN, TELA_MAX = 80, 200  # "Escala da interface" (wlr-randr --scale), em %
 
 PAPEL_PASTA = "/usr/share/backgrounds/voidbr"
 PAPEL_VOIDBR = os.path.join(PAPEL_PASTA, "voidbr-wallpaper.avif")
@@ -228,6 +233,22 @@ def gravar_prefs_app(**valores):
     with open(PREFS_APP, "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=2, ensure_ascii=False)
         f.write("\n")
+
+
+def esquecer_prefs_app(*chaves):
+    dados = ler_prefs_app()
+    if any(dados.pop(c, None) is not None for c in chaves):
+        os.makedirs(os.path.dirname(PREFS_APP), exist_ok=True)
+        with open(PREFS_APP, "w", encoding="utf-8") as f:
+            json.dump(dados, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+
+
+def num_pref(valor):
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
 
 
 def ler_texto(caminho, padrao=""):
@@ -768,6 +789,45 @@ def waybar_recarregar():
         em_segundo_plano(["waybar"])
 
 
+def wlr_saidas():
+    """[(nome, escala)] dos monitores ligados, lidos do wlr-randr."""
+    try:
+        r = subprocess.run(["wlr-randr"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    saidas = []
+    for linha in r.stdout.splitlines():
+        if linha and not linha[0].isspace():
+            saidas.append([linha.split()[0], None, True])
+        elif saidas:
+            chave, _, valor = linha.strip().partition(":")
+            if chave == "Enabled":
+                saidas[-1][2] = valor.strip() == "yes"
+            elif chave == "Scale":
+                try:
+                    saidas[-1][1] = float(valor)
+                except ValueError:
+                    pass
+    return [(nome, escala) for nome, escala, ligado in saidas if ligado]
+
+
+def escala_atual():
+    """Escala em uso no primeiro monitor ligado, em %."""
+    for _nome, escala in wlr_saidas():
+        if escala:
+            return round(escala * 100)
+    return None
+
+
+def escala_aplicar(pct):
+    """wlr-randr --scale em todos os monitores ligados (vale na hora)."""
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        return
+    for nome, _escala in wlr_saidas():
+        subprocess.run(["wlr-randr", "--output", nome, "--scale", f"{pct / 100:g}"],
+                       capture_output=True)
+
+
 def papel_aplicar(caminho, modo):
     os.makedirs(os.path.dirname(PAPEL_LINK), exist_ok=True)
     if os.path.islink(PAPEL_LINK) or os.path.exists(PAPEL_LINK):
@@ -839,6 +899,8 @@ def valores_atuais():
         "fonte_ui": m.group(1) if m else fonte_ui,
         "fonte_ui_tam": int(float(m.group(2))) if m else 10,
         "escuro": gs_ler("color-scheme", "prefer-dark") == "prefer-dark",
+        "escala": max(TELA_MIN, min(TELA_MAX, num_pref(ler_prefs_app().get("escala"))
+                                    or escala_atual() or 100)),
         # papel de parede
         "papel": papel,
         "papel_modo": ler_prefs_app().get("papel_modo", "fill"),
@@ -867,12 +929,14 @@ GRUPOS = {
                 "foco_mouse"),
     "barra": ("estilo", "posicao", "altura", "opacidade", "modulos"),
     "aparencia": ("gtk", "icones", "cursor", "cursor_tam", "fonte_ui", "fonte_ui_tam", "escuro"),
+    "escala": ("escala",),
     "papel": ("papel", "papel_modo"),
     "teclado": ("layouts", "variante", "modelo", "alternar", "numlock", "repeticao", "atraso"),
     "touchpad": ("toque", "natural", "digitando", "velocidade"),
     "areas": ("areas_num", "areas_nomes", "areas_aviso"),
 }
 NOMES_GRUPOS = {"janelas": "janelas", "barra": "barra", "aparencia": "aparência",
+                "escala": "escala da interface",
                 "papel": "papel de parede", "teclado": "teclado", "touchpad": "touchpad",
                 "areas": "áreas de trabalho"}
 NOMES = [k for chaves in GRUPOS.values() for k in chaves]
@@ -958,6 +1022,11 @@ def aplicar(v, antes, progresso=lambda _t: None):
         css_gravar(v["estilo"], v["posicao"], v["opacidade"])
         waybar_recarregar()
 
+    if "escala" in mudou:
+        progresso("Escala da interface…")
+        gravar_prefs_app(escala=v["escala"])  # o voidbr-labwc-session reaplica no login
+        escala_aplicar(v["escala"])
+
     if "papel" in mudou and v["papel"]:
         progresso("Papel de parede…")
         papel_aplicar(v["papel"], v["papel_modo"])
@@ -1000,6 +1069,8 @@ def restaurar(base, progresso=lambda _t: None):
         sinal("xsettingsd", signal.SIGHUP)
         if os.path.exists(PAPEL_VOIDBR):
             papel_aplicar(PAPEL_VOIDBR, "fill")
+        esquecer_prefs_app("escala")
+        escala_aplicar(100)
         waybar_recarregar()
     else:
         progresso("Voltando ao padrão do labwc…")
@@ -1311,6 +1382,12 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         self.w_cursor = self._lista(g, "Tema do cursor", self.op_cursor)
         self.w_cursor_tam = self._escala(g, "Tamanho do cursor", 16, 64, 8, " px",
                                          "Nos apps já abertos o cursor muda no próximo login.")
+        self._secao(g, "Tamanho")
+        self.w_escala = self._escala(g, "Escala da interface", TELA_MIN, TELA_MAX, 10, "%",
+                                     "Aumenta tudo na tela: janelas, barra, textos e cursor "
+                                     "(útil em telas de alta resolução). Vale para todos os "
+                                     "monitores. Fora de 100% e 200%, apps antigos (X11) podem "
+                                     "ficar um pouco borrados.")
         self._secao(g, "Fonte da interface")
         self.op_fonte_ui = familias_fonte(g)
         self.w_fonte_ui = self._lista(g, "Fonte", self.op_fonte_ui, busca=True)
@@ -1394,6 +1471,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
         self.w_cursor_tam.set_value(v["cursor_tam"])
         _escolha(self.w_fonte_ui, self.op_fonte_ui, v["fonte_ui"])
         self.w_fonte_ui_tam.set_value(v["fonte_ui_tam"])
+        self.w_escala.set_value(v["escala"])
 
         _escolha(self.w_papel, self.op_papel, v["papel"])
         _escolha(self.w_papel_modo, PAPEL_MODOS, v["papel_modo"])
@@ -1437,6 +1515,7 @@ class JanelaTweaks(Gtk.ApplicationWindow):
             "cursor_tam": int(self.w_cursor_tam.get_value()),
             "fonte_ui": self._valor_dd(self.w_fonte_ui) or a["fonte_ui"],
             "fonte_ui_tam": int(self.w_fonte_ui_tam.get_value()),
+            "escala": int(round(self.w_escala.get_value() / 10) * 10),
             "papel": self._valor_dd(self.w_papel) or a["papel"],
             "papel_modo": self._valor_dd(self.w_papel_modo),
             "layouts": self.w_layouts.get_text().strip(),

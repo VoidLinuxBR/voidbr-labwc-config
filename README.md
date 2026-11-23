@@ -33,7 +33,7 @@ Fica no menu de aplicativos e no clique direito → Configurações.
 |---|---|
 | 🪟 Janelas | Tema do labwc, botões (direita / esquerda estilo Mac), cantos, sombras, fonte, espaço até as bordas, foco segue o mouse |
 | 🧱 Barra | Waybar em ilha ou inteira, opacidade, em cima / embaixo, altura e módulos |
-| 🎨 Aparência | Tema GTK, modo escuro, ícones, cursor e fonte (gsettings + xsettingsd) |
+| 🎨 Aparência | Tema GTK, modo escuro, ícones, cursor, fonte (gsettings + xsettingsd) e escala da interface (80% a 200%, todos os monitores) |
 | 🖼️ Papel de parede | Imagens do voidbr-wallpapers ou própria, e o ajuste na tela |
 | ⌨️ Teclado e touchpad | Layouts, variantes, modelo ABNT2, troca de layout, Num Lock, repetição, toque, rolagem natural, velocidade |
 | 🗂️ Áreas de trabalho | Quantidade, nomes e aviso ao trocar (os atalhos Super+N acompanham) |

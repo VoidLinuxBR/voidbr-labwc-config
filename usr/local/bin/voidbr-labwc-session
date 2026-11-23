@@ -2,8 +2,8 @@
 # ====================================================================
 # VoidBR Labwc - Serviços da sessão (chamado pelo ~/.config/labwc/autostart)
 # Created: qui 19 nov 2026 23:53:31 -04
-# Updated: sex 20 nov 2026 00:58:00 -04
-# Version: 1.0.1
+# Updated: seg 23 nov 2026 02:24:50 -04
+# Version: 1.0.2
 # ====================================================================
 WALL="$HOME/.local/share/backgrounds/current"
 FIRST="$HOME/.config/voidbr/labwc-first-login"
@@ -66,6 +66,16 @@ fi
 # Papel de parede (o ajuste na tela vem do voidbr-labwc-tweaks; padrão: fill)
 MODO=$(sed -n 's/.*"papel_modo": *"\([a-z]*\)".*/\1/p' "$HOME/.config/voidbr/labwc-tweaks.json" 2>/dev/null)
 command -v swaybg >/dev/null && swaybg -i "$WALL" -m "${MODO:-fill}" &
+
+# Escala da interface escolhida no voidbr-labwc-tweaks (todos os monitores)
+ESCALA=$(sed -n 's/.*"escala": *\([0-9]*\).*/\1/p' "$HOME/.config/voidbr/labwc-tweaks.json" 2>/dev/null)
+if [ -n "$ESCALA" ] && [ "$ESCALA" != 100 ] && command -v wlr-randr >/dev/null; then
+    fator=$(LC_ALL=C awk -v p="$ESCALA" 'BEGIN { printf "%g", p / 100 }')
+    # só os monitores ligados ("Enabled: yes")
+    for saida in $(wlr-randr | awk '/^[^ \t]/ { nome = $1 } /^[ \t]+Enabled: yes/ { print nome }'); do
+        wlr-randr --output "$saida" --scale "$fator"
+    done
+fi
 
 # Notificações e barra
 command -v mako >/dev/null && mako &
